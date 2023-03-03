@@ -82,6 +82,12 @@ describe("Collateral", () => {
       expect(withdraw).to.emit(col, "Withdraw"
       ).withArgs(usdc.address, await addresses[0].getAddress(), ONE_TOKEN, collateralBalance);
     });
+    
+    it("reverts if withdrawal amount is larger than collateral balance", async () => {
+      expect(col.connect(addresses[0]).withdrawCollateral(TEN_THOUSAND_TOKENS)).to.be.revertedWith(
+        "Requested withdrawal amount larger than collateral balance"
+      );
+    });
 
   });
 
