@@ -57,18 +57,6 @@ describe.only("Bets", () => {
         await usdc.connect(addresses[0]).approve(bets.address, HUNDRED_TOKENS);
     });
 
-    it("creates an order and emits the OrderCreated event", async () => {
-        const user = await addresses[0].getAddress();
-        const betIndex = 1;
-        const betPrice = ONE_TOKEN;
-        const contractAmount = 100;
-        const side = true;
-        const createOrder = await bets.connect(addresses[0]).createOrder(betIndex, betPrice, contractAmount, side);
-        expect(createOrder
-            ).to.emit(bets, "OrderCreated").withArgs(
-            user, betIndex, betPrice, contractAmount, side);
-    });
-
     it("creates an order", async () => {
         const user = await addresses[0].getAddress();
         const betIndex = 1;
@@ -85,6 +73,19 @@ describe.only("Bets", () => {
         expect(orders.side).to.equal(side);
     });
 
+    it("creates an order and emits the OrderCreated event", async () => {
+      const user = await addresses[0].getAddress();
+      const betIndex = 1;
+      const betPrice = ONE_TOKEN;
+      const contractAmount = 100;
+      const side = true;
+      const createOrder = await bets.connect(addresses[0]).createOrder(betIndex, betPrice, contractAmount, side);
+      expect(createOrder
+          ).to.emit(bets, "OrderCreated").withArgs(
+          user, betIndex, betPrice, contractAmount, side);
+    });
+
+
     it("gets an order", async () => {
         const user = await addresses[0].getAddress();
         const betIndex = 3;
@@ -99,7 +100,47 @@ describe.only("Bets", () => {
         expect(getOrder.betPrice).to.equal(betPrice);
         expect(getOrder.contractAmount).to.equal(contractAmount);
         expect(getOrder.side).to.equal(side);
+    });
+  });
 
+  describe("cancels orders", async () => {
+    beforeEach(async function instance() {
+        setupBets
+        await usdc.transfer(await addresses[0].getAddress(), THOUSAND_TOKENS);
+        await usdc.connect(addresses[0]).approve(bets.address, HUNDRED_TOKENS);
+        const betIndex = 3;
+        const betPrice = TEN_TOKENS;
+        const contractAmount = 10;
+        const side = true;
+        await bets.connect(addresses[0]).createOrder(betIndex, betPrice, contractAmount, side);
+        
+    });
+
+    it("cancels an order", async () => {
+      const user = await addresses[0].getAddress();
+      const betIndex = 3;
+      const orderIndex = await bets.ordersIndex(user, betIndex);
+      await bets.connect(addresses[0]).cancelOrder(betIndex, orderIndex);
+      const orders = await bets.orders(user, betIndex, orderIndex);
+      expect(orders.account).to.equal("0x0000000000000000000000000000000000000000");
+      expect(orders.betIndex).to.equal(0);
+      expect(orders.betPrice).to.equal(0);
+      expect(orders.contractAmount).to.equal(0);
+      expect(orders.side).to.equal(false);
+    });
+
+    it("cancels an order and emits the OrderCanceled event", async () => {
+      const user = await addresses[0].getAddress();
+      const betIndex = 3;
+      const betPrice = TEN_TOKENS;
+      const contractAmount = 10;
+      const side = true;
+      const orderIndex = await bets.ordersIndex(user, betIndex);
+      const cancelOrder = await bets.connect(addresses[0]).cancelOrder(betIndex, orderIndex);
+      expect(cancelOrder
+        ).to.emit(bets, "OrderCanceled").withArgs(
+          user, betIndex, betPrice, contractAmount, side
+      );
     });
   });
 
