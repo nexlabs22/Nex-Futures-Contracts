@@ -38,6 +38,14 @@ contract Bets is ReentrancyGuard {
         bool indexed side
     );
 
+    event OrderCanceled (
+        address indexed account,
+        uint256 indexed betIndex,
+        uint256 betPrice,
+        uint256 contractAmount,
+        bool indexed side
+    );
+
     constructor(
         address _usdc
     ) {
@@ -53,6 +61,17 @@ contract Bets is ReentrancyGuard {
     ) internal {
         SafeERC20.safeTransferFrom(IERC20(usdc), msg.sender, address(this), _amount);
         emit StakeTransferred(msg.sender, address(this), usdc, _amount);
+    }
+    
+    /**
+     * @dev deposits the stake determined by the user.
+     * @param _amount the amount of USDC that will be transferred.
+     */
+    function withdrawStake(
+        uint256 _amount
+    ) internal {
+        SafeERC20.safeTransfer(IERC20(usdc), msg.sender, _amount);
+        emit StakeTransferred(address(this), msg.sender, usdc, _amount);
     }
 
     /**
@@ -112,6 +131,27 @@ contract Bets is ReentrancyGuard {
 
         emit OrderCreated(
             order.account,
+            order.betIndex,
+            order.betPrice,
+            order.contractAmount,
+            order.side
+        );
+    }
+
+    function cancelOrder(
+        uint256 _betIndex,
+        uint256 _orderIndex
+    ) external payable nonReentrant {
+        Order memory order = orders[msg.sender][_betIndex][_orderIndex];
+        require(msg.sender != address(0), "Order does not exist");
+
+        uint256 stakedAmount = order.betPrice * order.contractAmount;
+
+        delete orders[msg.sender][_betIndex][_orderIndex];
+        withdrawStake(stakedAmount);
+
+        emit OrderCanceled(
+            msg.sender,
             order.betIndex,
             order.betPrice,
             order.contractAmount,
