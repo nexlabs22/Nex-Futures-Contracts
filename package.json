@@ -32,6 +32,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.171.0",
     "@chainlink/contracts": "^0.6.1",
+    "@chainlink/token": "^1.1.0",
     "@imtbl/imx-contracts": "^1.0.1",
     "@openzeppelin/contracts": "^4.6.0",
     "@typechain/hardhat": "^6.0.0",
