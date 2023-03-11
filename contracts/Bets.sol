@@ -138,6 +138,11 @@ contract Bets is ReentrancyGuard {
         );
     }
 
+    /**
+     * @dev Allows users to cancel orders
+     * @param _betIndex the index of the bet, e.g. football game: index 1, boxing game: index 2, etc.
+     * @param _orderIndex the index of the order for the _betIndex chosen by the user.
+     */
     function cancelOrder(
         uint256 _betIndex,
         uint256 _orderIndex
