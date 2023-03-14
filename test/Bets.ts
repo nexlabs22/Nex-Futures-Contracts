@@ -13,12 +13,19 @@ chai.use(solidity);
 const { expect } = chai;
 
 const provider = ethers.provider;
+const POINT_TWO_TOKENS = ethers.BigNumber.from("200000000000000000") as BigNumber;
+const POINT_FOUR_TOKENS = ethers.BigNumber.from("400000000000000000") as BigNumber;
+const POINT_SIX_TOKENS = ethers.BigNumber.from("600000000000000000") as BigNumber;
+const POINT_EIGHT_TOKENS = ethers.BigNumber.from("800000000000000000") as BigNumber;
 const ONE_TOKEN = ethers.BigNumber.from("1000000000000000000") as BigNumber;
 const NINE_TOKENS = ethers.BigNumber.from("9000000000000000000") as BigNumber;
 const TEN_TOKENS = ethers.BigNumber.from("10000000000000000000") as BigNumber;
 const HUNDRED_TOKENS = ethers.BigNumber.from("100000000000000000000") as BigNumber;
 const THOUSAND_TOKENS = ethers.BigNumber.from("1000000000000000000000") as BigNumber;
 const TEN_THOUSAND_TOKENS = ethers.BigNumber.from("10000000000000000000000") as BigNumber;
+const HUNDRED_THOUSAND_TOKENS = ethers.BigNumber.from("100000000000000000000000") as BigNumber;
+const MILLION_TOKENS = ethers.BigNumber.from("100000000000000000000000") as BigNumber;
+
 
 describe.only("Bets", () => {
   let bets: Bets
@@ -32,7 +39,7 @@ describe.only("Bets", () => {
   const setupBets = async () => {
     [deployer, admin1, admin2, vault, ...addresses] = await ethers.getSigners();
     usdc = await new TokenFactory(deployer).deploy(
-      TEN_THOUSAND_TOKENS
+      MILLION_TOKENS
         );
     await usdc.deployed();
 
@@ -50,7 +57,7 @@ describe.only("Bets", () => {
     });
   });
 
-  describe("Initiate and retrieve orders", async () => {
+  describe("Create and get orders", async () => {
     beforeEach(async function instance() {
         setupBets
         await usdc.transfer(await addresses[0].getAddress(), THOUSAND_TOKENS);
@@ -88,7 +95,7 @@ describe.only("Bets", () => {
 
     it("gets an order", async () => {
         const user = await addresses[0].getAddress();
-        const betIndex = 3;
+        const betIndex = 1;
         const betPrice = TEN_TOKENS;
         const contractAmount = 10;
         const side = true;
@@ -112,16 +119,14 @@ describe.only("Bets", () => {
         const betPrice = TEN_TOKENS;
         const contractAmount = 10;
         const side = true;
-        await bets.connect(addresses[0]).createOrder(betIndex, betPrice, contractAmount, side);
-        
+        await bets.connect(addresses[0]).createOrder(betIndex, betPrice, contractAmount, side); 
     });
 
     it("cancels an order", async () => {
       const user = await addresses[0].getAddress();
       const betIndex = 3;
-      const orderIndex = await bets.ordersIndex(user, betIndex);
-      await bets.connect(addresses[0]).cancelOrder(betIndex, orderIndex);
-      const orders = await bets.orders(user, betIndex, orderIndex);
+      await bets.connect(addresses[0]).cancelOrder(betIndex, 1);
+      const orders = await bets.orders(user, betIndex, 1);
       expect(orders.account).to.equal("0x0000000000000000000000000000000000000000");
       expect(orders.betIndex).to.equal(0);
       expect(orders.betPrice).to.equal(0);
@@ -131,7 +136,7 @@ describe.only("Bets", () => {
 
     it("cancels an order and emits the OrderCanceled event", async () => {
       const user = await addresses[0].getAddress();
-      const betIndex = 3;
+      const betIndex = 1;
       const betPrice = TEN_TOKENS;
       const contractAmount = 10;
       const side = true;
@@ -144,4 +149,55 @@ describe.only("Bets", () => {
     });
   });
 
+  describe("Executing orders", async () => {
+    beforeEach(async function instance() {
+      setupBets
+      await usdc.transfer(await addresses[6].getAddress(), HUNDRED_TOKENS);
+      await usdc.connect(addresses[6]).approve(bets.address, HUNDRED_TOKENS);
+      await usdc.transfer(await addresses[7].getAddress(), HUNDRED_TOKENS);
+      await usdc.connect(addresses[7]).approve(bets.address, HUNDRED_TOKENS);
+    });
+
+    it("Executes orders and emits the ExecutesOrder event", async () => {
+      const winner = await addresses[6].getAddress();
+      const loser = await addresses[7].getAddress();
+      const betIndex = 3;
+      const betPriceWinner = POINT_EIGHT_TOKENS;
+      const betPriceLoser = POINT_TWO_TOKENS;
+      const contractAmount = 10;
+      const sideWinner = true;
+      const sideLoser = false;
+      await bets.connect(addresses[6]).createOrder(betIndex, betPriceWinner, contractAmount, sideWinner);
+      await bets.connect(addresses[7]).createOrder(betIndex, betPriceLoser, contractAmount, sideLoser);
+      const orderIndexWinner = await bets.ordersIndex(winner, betIndex);
+      const orderIndexLoser = await bets.ordersIndex(loser, betIndex);
+      const executeOrder = await bets.executeOrder(winner, loser, betIndex, orderIndexWinner, orderIndexLoser);
+      expect(executeOrder).to.emit(bets, "OrderExecuted"
+      ).withArgs(
+        winner, 
+        loser, 
+        betIndex, 
+        betPriceWinner,
+        betPriceLoser,
+        contractAmount
+        );
+    });
+
+    it("Reverts when bet prices do not match", async () => {
+      const winner = await addresses[6].getAddress();
+      const loser = await addresses[7].getAddress();
+      const betIndex = 3;
+      const betPriceWinner = POINT_EIGHT_TOKENS;
+      const betPriceLoser1 = POINT_SIX_TOKENS;
+      const contractAmount = 10;
+      const sideWinner = true;
+      const sideLoser = false;
+      await bets.connect(addresses[6]).createOrder(betIndex, betPriceWinner, contractAmount, sideWinner);
+      await bets.connect(addresses[7]).createOrder(betIndex, betPriceLoser1, contractAmount, sideLoser);
+      const orderIndexWinner = await bets.ordersIndex(winner, betIndex);
+      const orderIndexLoser = await bets.ordersIndex(loser, betIndex);
+      await expect(bets.executeOrder(winner, loser, betIndex, orderIndexWinner, orderIndexLoser)
+      ).to.be.revertedWith("Bet prices do not match");
+    });
+  });
 });
