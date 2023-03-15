@@ -171,7 +171,7 @@ describe.only("Bets", () => {
       await bets.connect(addresses[7]).createOrder(betIndex, betPriceLoser, contractAmount, sideLoser);
       const orderIndexWinner = await bets.ordersIndex(winner, betIndex);
       const orderIndexLoser = await bets.ordersIndex(loser, betIndex);
-      const executeOrder = await bets.executeOrder(winner, loser, betIndex, orderIndexWinner, orderIndexLoser);
+      const executeOrder = await bets.connect(deployer).executeOrder(winner, loser, betIndex, orderIndexWinner, orderIndexLoser);
       expect(executeOrder).to.emit(bets, "OrderExecuted"
       ).withArgs(
         winner, 
@@ -196,8 +196,25 @@ describe.only("Bets", () => {
       await bets.connect(addresses[7]).createOrder(betIndex, betPriceLoser1, contractAmount, sideLoser);
       const orderIndexWinner = await bets.ordersIndex(winner, betIndex);
       const orderIndexLoser = await bets.ordersIndex(loser, betIndex);
-      await expect(bets.executeOrder(winner, loser, betIndex, orderIndexWinner, orderIndexLoser)
+      await expect(bets.connect(deployer).executeOrder(winner, loser, betIndex, orderIndexWinner, orderIndexLoser)
       ).to.be.revertedWith("Bet prices do not match");
     });
+
+    it("Reverts when execute order function is not called by the admin", async () => {
+      const winner = await addresses[6].getAddress();
+      const loser = await addresses[7].getAddress();
+      const betIndex = 3;
+      const betPriceWinner = POINT_EIGHT_TOKENS;
+      const betPriceLoser1 = POINT_SIX_TOKENS;
+      const contractAmount = 10;
+      const sideWinner = true;
+      const sideLoser = false;
+      await bets.connect(addresses[6]).createOrder(betIndex, betPriceWinner, contractAmount, sideWinner);
+      await bets.connect(addresses[7]).createOrder(betIndex, betPriceLoser1, contractAmount, sideLoser);
+      const orderIndexWinner = await bets.ordersIndex(winner, betIndex);
+      const orderIndexLoser = await bets.ordersIndex(loser, betIndex);
+      await expect(bets.connect(addresses[0]).executeOrder(winner, loser, betIndex, orderIndexWinner, orderIndexLoser)
+      ).to.be.revertedWith("Forbidden");
+    })
   });
 });

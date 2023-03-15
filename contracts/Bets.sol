@@ -11,8 +11,8 @@ contract Bets is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     address public usdc;
+    address public admin;
 
-        // _orderOwner      //betIndex         //_orderIndex
     mapping(address => mapping(uint256 => mapping(uint256 => Order))) public orders;
     mapping(address => mapping(uint256 => uint256)) public ordersIndex;
 
@@ -56,10 +56,24 @@ contract Bets is ReentrancyGuard {
         uint256 contractAmount
     );
 
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Forbidden");
+        _;
+    }
+
     constructor(
         address _usdc
     ) {
         usdc = _usdc;
+        admin = msg.sender;
+    }
+
+    /**
+     * @dev changes the admin address
+     * @param newAdmin the address of the new admin
+     */
+    function changeAdmin(address newAdmin) external onlyAdmin {
+        admin = newAdmin;
     }
 
     /**
@@ -68,7 +82,7 @@ contract Bets is ReentrancyGuard {
      */
     function depositStake(
         uint256 _amount
-    ) public {
+    ) internal {
 
         IERC20(usdc).safeTransferFrom(msg.sender, address(this), _amount);
 
@@ -83,7 +97,7 @@ contract Bets is ReentrancyGuard {
     function transferStake(
         address _account,
         uint256 _amount
-    ) public {
+    ) internal {
 
         IERC20(usdc).safeTransfer(_account, _amount);
 
@@ -137,7 +151,7 @@ contract Bets is ReentrancyGuard {
         uint256 _betPrice, 
         uint256 _contractAmount, 
         bool _side
-        ) external payable nonReentrant {
+        ) external nonReentrant {
 
         Order memory order = Order(
             msg.sender,
@@ -173,7 +187,7 @@ contract Bets is ReentrancyGuard {
     function cancelOrder(
         uint256 _betIndex,
         uint256 _orderIndex
-    ) external payable nonReentrant {
+    ) external nonReentrant {
         require(
             msg.sender != address(0) 
             || _betIndex != 0  
@@ -211,7 +225,7 @@ contract Bets is ReentrancyGuard {
         uint256 _betIndex,
         uint256 _orderIndexWinner,
         uint256 _orderIndexLoser
-    ) external {
+    ) external onlyAdmin {
         require(
             _winner != address(0)
             || _loser != address(0) 

@@ -36,6 +36,7 @@
     "@chainlink/token": "^1.1.0",
     "@imtbl/imx-contracts": "^1.0.1",
     "@openzeppelin/contracts": "^4.6.0",
+    "@remix-project/remixd": "^0.6.12",
     "@typechain/hardhat": "^6.0.0",
     "js-sha3": "^0.5.7",
     "merkletreejs": "^0.2.27",
