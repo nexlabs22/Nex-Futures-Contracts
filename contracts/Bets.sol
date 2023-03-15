@@ -11,6 +11,7 @@ contract Bets is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     address public usdc;
+    address public admin;
 
     mapping(address => mapping(uint256 => mapping(uint256 => Order))) public orders;
     mapping(address => mapping(uint256 => uint256)) public ordersIndex;
@@ -55,10 +56,24 @@ contract Bets is ReentrancyGuard {
         uint256 contractAmount
     );
 
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Forbidden");
+        _;
+    }
+
     constructor(
         address _usdc
     ) {
         usdc = _usdc;
+        admin = msg.sender;
+    }
+
+    /**
+     * @dev changes the admin address
+     * @param newAdmin the address of the new admin
+     */
+    function changeAdmin(address newAdmin) external onlyAdmin {
+        admin = newAdmin;
     }
 
     /**
@@ -210,7 +225,7 @@ contract Bets is ReentrancyGuard {
         uint256 _betIndex,
         uint256 _orderIndexWinner,
         uint256 _orderIndexLoser
-    ) external {
+    ) external onlyAdmin {
         require(
             _winner != address(0)
             || _loser != address(0) 
