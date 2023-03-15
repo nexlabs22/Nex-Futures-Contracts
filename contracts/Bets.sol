@@ -12,7 +12,6 @@ contract Bets is ReentrancyGuard {
 
     address public usdc;
 
-        // _orderOwner      //betIndex         //_orderIndex
     mapping(address => mapping(uint256 => mapping(uint256 => Order))) public orders;
     mapping(address => mapping(uint256 => uint256)) public ordersIndex;
 
@@ -68,7 +67,7 @@ contract Bets is ReentrancyGuard {
      */
     function depositStake(
         uint256 _amount
-    ) public {
+    ) internal {
 
         IERC20(usdc).safeTransferFrom(msg.sender, address(this), _amount);
 
@@ -83,7 +82,7 @@ contract Bets is ReentrancyGuard {
     function transferStake(
         address _account,
         uint256 _amount
-    ) public {
+    ) internal {
 
         IERC20(usdc).safeTransfer(_account, _amount);
 
@@ -137,7 +136,7 @@ contract Bets is ReentrancyGuard {
         uint256 _betPrice, 
         uint256 _contractAmount, 
         bool _side
-        ) external payable nonReentrant {
+        ) external nonReentrant {
 
         Order memory order = Order(
             msg.sender,
@@ -173,7 +172,7 @@ contract Bets is ReentrancyGuard {
     function cancelOrder(
         uint256 _betIndex,
         uint256 _orderIndex
-    ) external payable nonReentrant {
+    ) external nonReentrant {
         require(
             msg.sender != address(0) 
             || _betIndex != 0  
