@@ -5,8 +5,9 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import {GameOracle} from "./GameOracle.sol";
 
-contract Bets is ReentrancyGuard {
+contract Bets is ReentrancyGuard, GameOracle {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
@@ -62,11 +63,30 @@ contract Bets is ReentrancyGuard {
     }
 
     constructor(
-        address _usdc
-    ) {
+        address _usdc,
+        address _link,
+        address _oracle
+    ) GameOracle(_link, _oracle) {
         usdc = _usdc;
         admin = msg.sender;
     }
+
+    /**
+     * @dev changes the admin address
+     * @param _requestId the requestId returned by requestGame function
+     * @param _idx the requestId returned by requestGame function
+     * return GameResolve struct
+     *  struct GameResolve {
+        bytes32 gameId;
+        uint8 homeScore;
+        uint8 awayScore;
+        uint8 statusId;
+        }
+     */
+     function getGameResult(bytes32 _requestId, uint256 _idx)  external view returns (GameResolve memory) {
+        GameResolve memory game = abi.decode(requestIdGames[_requestId][_idx], (GameResolve));
+        return game;
+     }
 
     /**
      * @dev changes the admin address

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.6.6;
-
+pragma experimental ABIEncoderV2;
 import "@chainlink/contracts/src/v0.6/LinkTokenReceiver.sol";
 import "@chainlink/contracts/src/v0.6/interfaces/ChainlinkRequestInterface.sol";
 import "@chainlink/contracts/src/v0.6/interfaces/LinkTokenInterface.sol";
@@ -10,7 +10,7 @@ import "@chainlink/contracts/src/v0.6/vendor/SafeMathChainlink.sol";
  * @title The Chainlink Mock Oracle contract
  * @notice Chainlink smart contract developers can use this to test their contracts
  */
-contract MockOracle is ChainlinkRequestInterface, LinkTokenReceiver {
+contract MockGameOracle is ChainlinkRequestInterface, LinkTokenReceiver {
   using SafeMathChainlink for uint256;
 
   uint256 public constant EXPIRY_TIME = 5 minutes;
@@ -46,6 +46,8 @@ contract MockOracle is ChainlinkRequestInterface, LinkTokenReceiver {
   constructor(address _link) public {
     LinkToken = LinkTokenInterface(_link); // external but already deployed and unalterable
   }
+
+  
 
   /**
    * @notice Creates the Chainlink request
@@ -99,7 +101,7 @@ contract MockOracle is ChainlinkRequestInterface, LinkTokenReceiver {
    * @param _data The data to return to the consuming contract
    * @return Status if the external call was successful
    */
-  function fulfillOracleRequest(bytes32 _requestId, bytes32 _data)
+  function fulfillOracleRequest(bytes32 _requestId, bytes[] calldata _data)
     external
     isValidRequest(_requestId)
     returns (bool)

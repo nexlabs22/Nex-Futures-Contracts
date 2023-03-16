@@ -1,12 +1,14 @@
 import { ethers } from "hardhat";
-import { BigNumber, Contract, Signer } from "ethers";
-import chai, { should } from "chai";
+import { BigNumber, Contract, ContractReceipt, ContractTransaction, Signer } from "ethers";
+import chai, { should, assert } from "chai";
 import { solidity } from "ethereum-waffle";
 import { getAddress } from "@ethersproject/address";
 import { Bets } from "../typechain/Bets";
 import { BetsFactory } from "../typechain/BetsFactory";
 import { Token } from "../typechain/Token";
 import { TokenFactory } from "../typechain/TokenFactory";
+import { GameOracle, LinkToken, LinkTokenFactory, MockGameOracle, MockGameOracleFactory } from "../typechain";
+import { numToBytes32 } from "@chainlink/test-helpers/dist/src/helpers";
 
 chai.use(solidity);
 
@@ -36,17 +38,70 @@ describe.only("Bets", () => {
   vault: Signer,
   addresses: Signer[];
 
+  let linkToken: LinkToken
+  let mockGameOracle: MockGameOracle
+
+
+  //oracle input data (they are fixed value for testing)
+  const jobId = ethers.utils.toUtf8Bytes("29fa9aa13bf1468788b7cc4a500a45b8"); //test job id
+  const fee = "100000000000000000" // fee = 0.1 linkToken
+  const market = "resolve";
+  const sprotId = "1";
+  const gameId = 1;
+  const statusId = "1";
+
+
+  //request data from oracle
+  async function requestGame() {
+    //fund link befor request
+    await linkToken.transfer( bets.address, fee);
+  
+    const date = new Date();
+    //request for data
+    const transaction: ContractTransaction = await bets.requestGames(
+        jobId, //specId
+        fee,   //payment
+        market,//market
+        sprotId,//sportId
+        date.getTime(),//date
+        {gasLimit:1000000}
+    );
+    const transactionReceipt: ContractReceipt = await transaction.wait(1);
+    if (!transactionReceipt.events) return
+    const requestId: string = transactionReceipt.events[0].topics[1];
+    return requestId;
+  }
+
+
+  //change oracle data for testing
+  async function changeOracleData(homeScore:number, awayScore:number, requestId:any) {
+    const abiCoder = new ethers.utils.AbiCoder;
+    let data = abiCoder.encode([ "bytes32", "uint8", "uint8", "uint8" ], [numToBytes32(gameId), homeScore.toString(), awayScore.toString(), statusId]);
+    await mockGameOracle.fulfillOracleRequest(requestId, [data]);
+  }
+
   const setupBets = async () => {
     [deployer, admin1, admin2, vault, ...addresses] = await ethers.getSigners();
+
+    //deploy link
+    linkToken = await new LinkTokenFactory(deployer).deploy();
+    //deploy mockGameOracle to test oracle
+    mockGameOracle = await new MockGameOracleFactory(deployer).deploy(
+        linkToken.address
+    );
+
     usdc = await new TokenFactory(deployer).deploy(
       MILLION_TOKENS
         );
     await usdc.deployed();
 
     bets = await new BetsFactory(deployer).deploy(
-      await usdc.address
+      await usdc.address,
+      linkToken.address,
+      mockGameOracle.address
       );
     await bets.deployed();
+
   };
 
   describe("Deployment", async () => {
@@ -62,6 +117,19 @@ describe.only("Bets", () => {
         setupBets
         await usdc.transfer(await addresses[0].getAddress(), THOUSAND_TOKENS);
         await usdc.connect(addresses[0]).approve(bets.address, HUNDRED_TOKENS);
+    });
+
+    it("test game oracle", async () => {
+      //request data
+      const requestId:any = await requestGame();
+      //set oracle data
+      await changeOracleData(1, 2, requestId);
+      //get oracle data
+      const volume = await bets.getGameResult(requestId, 0)
+      assert.equal(Number(volume.gameId), gameId);
+      assert.equal(Number(volume.homeScore), 1);
+      assert.equal(Number(volume.awayScore), 2);
+      assert.equal(Number(volume.statusId), Number(sprotId));
     });
 
     it("creates an order", async () => {

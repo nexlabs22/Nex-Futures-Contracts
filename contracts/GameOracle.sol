@@ -2,40 +2,97 @@
 pragma solidity 0.8.17;
 
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
+
 /**
- * **** Data Conversions ****
- *
- * market (uint256)
- * --------------------------
- * Value    Type
- * --------------------------
- * 0        create
- * 1        resolve
- *
+ * Supported `sportId`
+ * --------------------
+ * NCAA Men's Football: 1
+ * NFL: 2
+ * MLB: 3
+ * NBA: 4
+ * NCAA Men's Basketball: 5
+ * NHL: 6
+ * MMA: 7
+ * WNBA: 8
+ * MLS: 10
+ * EPL: 11
+ * Ligue 1: 12
+ * Bundesliga: 13
+ * La Liga: 14
+ * Serie A: 15
+ * UEFA Champions League: 16
  */
+
 /**
- * @title A consumer contract for Enetscores.
+ * Supported `market`
+ * --------------------
+ * create : Create Market
+ * resolve : Resolve Market
+ */
+
+/**
+ * Supported `statusIds`
+ * --------------------
+ * 1 : STATUS_CANCELED
+ * 2 : STATUS_DELAYED
+ * 3 : STATUS_END_OF_FIGHT
+ * 4 : STATUS_END_OF_ROUND
+ * 5 : STATUS_END_PERIOD
+ * 6 : STATUS_FIGHTERS_INTRODUCTION
+ * 7 : STATUS_FIGHTERS_WALKING
+ * 8 : STATUS_FINAL
+ * 9 : STATUS_FINAL_PEN
+ * 10 : STATUS_FIRST_HALF
+ * 11 : STATUS_FULL_TIME
+ * 12 : STATUS_HALFTIME
+ * 13 : STATUS_IN_PROGRESS
+ * 14 : STATUS_IN_PROGRESS_2
+ * 15 : STATUS_POSTPONED
+ * 16 : STATUS_PRE_FIGHT
+ * 17 : STATUS_RAIN_DELAY
+ * 18 : STATUS_SCHEDULED
+ * 19 : STATUS_SECOND_HALF
+ * 20 : STATUS_TBD
+ * 21 : STATUS_UNCONTESTED
+ * 22 : STATUS_ABANDONED
+ * 23 : STATUS_END_OF_EXTRATIME
+ * 24 : STATUS_END_OF_REGULATION
+ * 25 : STATUS_FORFEIT
+ * 26 : STATUS_HALFTIME_ET
+ * 27 : STATUS_OVERTIME
+ * 28 : STATUS_SHOOTOUT
+ */
+
+/**
+ * @title A consumer contract for Therundown API.
  * @author LinkPool.
- * @notice Interact with the daily events API.
  * @dev Uses @chainlink/contracts 0.4.2.
  */
-contract EnetscoresConsumer is ChainlinkClient {
+
+contract GameOracle is ChainlinkClient {
     using Chainlink for Chainlink.Request;
     using CBORChainlink for BufferChainlink.buffer;
+
     struct GameCreate {
-        uint32 gameId;
-        uint40 startTime;
+        bytes32 gameId;
+        uint256 startTime;
         string homeTeam;
         string awayTeam;
     }
+
     struct GameResolve {
-        uint32 gameId;
+        bytes32 gameId;
         uint8 homeScore;
         uint8 awayScore;
-        string status;
+        uint8 statusId;
     }
+
     mapping(bytes32 => bytes[]) public requestIdGames;
+
     error FailedTransferLINK(address to, uint256 amount);
+
+    /* ========== CONSTRUCTOR ========== */
+
     /**
      * @param _link the LINK token address.
      * @param _oracle the Operator.sol contract address.
@@ -44,7 +101,9 @@ contract EnetscoresConsumer is ChainlinkClient {
         setChainlinkToken(_link);
         setChainlinkOracle(_oracle);
     }
+
     /* ========== EXTERNAL FUNCTIONS ========== */
+
     function cancelRequest(
         bytes32 _requestId,
         uint256 _payment,
@@ -53,88 +112,100 @@ contract EnetscoresConsumer is ChainlinkClient {
     ) external {
         cancelChainlinkRequest(_requestId, _payment, _callbackFunctionId, _expiration);
     }
-    /**
-     * @notice Stores the scheduled games.
-     * @param _requestId the request ID for fulfillment.
-     * @param _result the games either to be created or resolved.
-     */
-    function fulfillSchedule(bytes32 _requestId, bytes[] memory _result)
-        external
-        recordChainlinkFulfillment(_requestId)
-    {
-        requestIdGames[_requestId] = _result;
+
+    function fulfillGames(bytes32 _requestId, bytes[] memory _games) external recordChainlinkFulfillment(_requestId) {
+        requestIdGames[_requestId] = _games;
     }
+
     /**
-     * @notice Requests the tournament games either to be created or to be resolved on a specific date.
-     * @dev Requests the 'schedule' endpoint. Result is an array of GameCreate or GameResolve encoded (see structs).
+     * @notice Returns an array of game data for a given market, sport ID, and date.
+     * @dev Result format is array of either encoded GameCreate tuples or encoded GameResolve tuples.
      * @param _specId the jobID.
      * @param _payment the LINK amount in Juels (i.e. 10^18 aka 1 LINK).
-     * @param _market the number associated with the type of market (see Data Conversions).
-     * @param _leagueId the tournament ID.
-     * @param _date the starting time of the event as a UNIX timestamp in seconds.
+     * @param _market the type of game data to be queried ("create" or "resolve").
+     * @param _sportId the ID of the sport to be queried (see supported sportId).
+     * @param _date the date for the games to be queried (format in epoch).
      */
-    function requestSchedule(
+    function requestGames(
         bytes32 _specId,
         uint256 _payment,
-        uint256 _market,
-        uint256 _leagueId,
+        string calldata _market,
+        uint256 _sportId,
         uint256 _date
     ) external {
-        Chainlink.Request memory req = buildOperatorRequest(_specId, this.fulfillSchedule.selector);
-        req.addUint("market", _market);
-        req.addUint("leagueId", _leagueId);
+        Chainlink.Request memory req = buildChainlinkRequest(_specId, address(this), this.fulfillGames.selector);
+
         req.addUint("date", _date);
-        sendOperatorRequest(req, _payment);
+        req.add("market", _market);
+        req.addUint("sportId", _sportId);
+
+        sendChainlinkRequestTo(chainlinkOracleAddress(), req, _payment);
     }
+
     /**
-     * @notice Requests the tournament games either to be created or to be resolved on a specific date.
-     * @dev Requests the 'schedule' endpoint. Result is an array of GameCreate or GameResolve encoded (see structs).
+     * @notice Returns an Array of game data for a given market, sport ID, date and other filters.
+     * @dev Result format is array of either encoded GameCreate tuples or encoded GameResolve tuples.
+     * @dev "gameIds" is optional.
+     * @dev "statusIds" is optional, and ignored for market "create".
      * @param _specId the jobID.
      * @param _payment the LINK amount in Juels (i.e. 10^18 aka 1 LINK).
-     * @param _market the context of the games data to be requested: `0` (markets to be created),
-     * `1` (markets to be resolved).
-     * @param _leagueId the tournament ID.
-     * @param _date the date to request events by, as a UNIX timestamp in seconds.
-     * @param _gameIds the list of game IDs to filter by for market `1`, otherwise the value is ignored.
+     * @param _market the type of game data to be queried ("create" or "resolve").
+     * @param _sportId the ID of the sport to be queried (see supported sportId).
+     * @param _date the date for the games to be queried (format in epoch).
+     * @param _gameIds the IDs of the games to be queried (array of game ID as its string representation, e.g.
+     * ["23660869053591173981da79133fe4c2", "fb78cede8c9aa942b2569b048e649a3f"]).
+     * @param _statusIds the IDs of the statuses to be queried (an array of statusId, e.g. ["1","2","3"],
+     * see supported statusIds).
      */
-    function requestSchedule(
+    function requestGamesFiltering(
         bytes32 _specId,
         uint256 _payment,
-        uint256 _market,
-        uint256 _leagueId,
+        string calldata _market,
+        uint256 _sportId,
         uint256 _date,
-        uint256[] calldata _gameIds
+        bytes32[] memory _gameIds,
+        uint256[] memory _statusIds
     ) external {
-        Chainlink.Request memory req = buildOperatorRequest(_specId, this.fulfillSchedule.selector);
-        req.addUint("market", _market);
-        req.addUint("leagueId", _leagueId);
+        Chainlink.Request memory req = buildOperatorRequest(_specId, this.fulfillGames.selector);
+
+        req.add("market", _market);
+        req.addUint("sportId", _sportId);
         req.addUint("date", _date);
-        _addUintArray(req, "gameIds", _gameIds);
+        req.addStringArray("gameIds", _bytes32ArrayToString(_gameIds)); // NB: optional filter
+        _addUintArray(req, "statusIds", _statusIds); // NB: optional filter, ignored for market "create".
+
         sendOperatorRequest(req, _payment);
     }
+
     function setOracle(address _oracle) external {
         setChainlinkOracle(_oracle);
     }
-    function setRequestIdGames(bytes32 _requestId, bytes[] memory _games) external {
-        requestIdGames[_requestId] = _games;
-    }
+
     function withdrawLink(address payable _payee, uint256 _amount) external {
         LinkTokenInterface linkToken = LinkTokenInterface(chainlinkTokenAddress());
         if (!linkToken.transfer(_payee, _amount)) {
             revert FailedTransferLINK(_payee, _amount);
         }
     }
+
     /* ========== EXTERNAL VIEW FUNCTIONS ========== */
-    function getGameCreate(bytes32 _requestId, uint256 _idx) external view returns (GameCreate memory) {
-        return _getGameCreateStruct(requestIdGames[_requestId][_idx]);
+
+    function getGamesCreated(bytes32 _requestId, uint256 _idx) external view returns (GameCreate memory) {
+        GameCreate memory game = abi.decode(requestIdGames[_requestId][_idx], (GameCreate));
+        return game;
     }
-    function getGameResolve(bytes32 _requestId, uint256 _idx) external view returns (GameResolve memory) {
-        return _getGameResolveStruct(requestIdGames[_requestId][_idx]);
+
+    function getGamesResolved(bytes32 _requestId, uint256 _idx) external view returns (GameResolve memory) {
+        GameResolve memory game = abi.decode(requestIdGames[_requestId][_idx], (GameResolve));
+        return game;
     }
-    function _getOracleAddress() external view returns (address) {
+
+    function getOracleAddress() external view returns (address) {
         return chainlinkOracleAddress();
     }
+
     /* ========== PRIVATE PURE FUNCTIONS ========== */
+
     function _addUintArray(
         Chainlink.Request memory _req,
         string memory _key,
@@ -153,33 +224,20 @@ contract EnetscoresConsumer is ChainlinkClient {
         r2.buf.endSequence();
         _req = r2;
     }
-    function _getGameCreateStruct(bytes memory _data) private pure returns (GameCreate memory) {
-        uint32 gameId = uint32(bytes4(_sliceDynamicArray(0, 4, _data)));
-        uint40 startTime = uint40(bytes5(_sliceDynamicArray(4, 9, _data)));
-        uint8 homeTeamLength = uint8(bytes1(_data[9]));
-        uint256 endHomeTeam = 10 + homeTeamLength;
-        string memory homeTeam = string(_sliceDynamicArray(10, endHomeTeam, _data));
-        string memory awayTeam = string(_sliceDynamicArray(endHomeTeam, _data.length, _data));
-        GameCreate memory gameCreate = GameCreate(gameId, startTime, homeTeam, awayTeam);
-        return gameCreate;
-    }
-    function _getGameResolveStruct(bytes memory _data) private pure returns (GameResolve memory) {
-        uint32 gameId = uint32(bytes4(_sliceDynamicArray(0, 4, _data)));
-        uint8 homeScore = uint8(bytes1(_data[4]));
-        uint8 awayScore = uint8(bytes1(_data[5]));
-        string memory status = string(_sliceDynamicArray(6, _data.length, _data));
-        GameResolve memory gameResolve = GameResolve(gameId, homeScore, awayScore, status);
-        return gameResolve;
-    }
-    function _sliceDynamicArray(
-        uint256 _start,
-        uint256 _end,
-        bytes memory _data
-    ) private pure returns (bytes memory) {
-        bytes memory result = new bytes(_end - _start);
-        for (uint256 i = 0; i < _end - _start; ++i) {
-            result[i] = _data[_start + i];
+
+    function _bytes32ArrayToString(bytes32[] memory _bytes32Array) private pure returns (string[] memory) {
+        string[] memory gameIds = new string[](_bytes32Array.length);
+        for (uint256 i = 0; i < _bytes32Array.length; i++) {
+            gameIds[i] = _bytes32ToString(_bytes32Array[i]);
         }
-        return result;
+        return gameIds;
+    }
+
+    function _bytes32ToString(bytes32 _bytes32) private pure returns (string memory) {
+        bytes memory bytesArray = new bytes(32);
+        for (uint256 i; i < 32; i++) {
+            bytesArray[i] = _bytes32[i];
+        }
+        return string(bytesArray);
     }
 }
