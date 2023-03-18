@@ -145,7 +145,7 @@ contract Bets is ReentrancyGuard, GameOracle {
         address _account2,
         uint256 _amountAcc1,
         uint256 _amountAcc2
-    ) public {
+    ) internal {
 
         IERC20(usdc).safeTransfer(_account1, _amountAcc1);
         IERC20(usdc).safeTransfer(_account2, _amountAcc2);
