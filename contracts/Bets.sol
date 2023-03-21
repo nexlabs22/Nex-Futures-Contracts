@@ -14,14 +14,12 @@ contract Bets is ReentrancyGuard, GameOracle {
     address public usdc;
     address public owner;
     address public admin;
+    uint256 public executionFee = 10; //=> 10/10000 = 0.1%
 
     mapping(uint256 => mapping(uint256 => Order)) public ordersSideA;
     mapping(uint256 => mapping(uint256 => Order)) public ordersSideB;
 
     mapping(address => mapping(uint256 => uint256)) public ordersIndex;
-
-    //add fees to owner per transaction, check perpetual for boundary
-    //fee change function by admin in case owner is compromised 
 
     struct Order {
         address account;
@@ -29,6 +27,11 @@ contract Bets is ReentrancyGuard, GameOracle {
         uint256 betPrice;
         uint256 contractAmount;
     }
+
+    event FeeTransferred(
+        address to,
+        uint256 amount
+    );
 
     event StakeTransferred(
         address from,
@@ -46,7 +49,7 @@ contract Bets is ReentrancyGuard, GameOracle {
         uint256 amount2
     );
 
-    event OrderCreatedSideA (
+    event OrderCreatedSideA(
         address indexed account,
         uint256 indexed orderIndex,
         uint256 indexed gameId,
@@ -54,7 +57,7 @@ contract Bets is ReentrancyGuard, GameOracle {
         uint256 contractAmount
     );
 
-    event OrderCreatedSideB (
+    event OrderCreatedSideB(
         address indexed account,
         uint256 indexed orderIndex,
         uint256 indexed gameId,
@@ -62,7 +65,7 @@ contract Bets is ReentrancyGuard, GameOracle {
         uint256 contractAmount
     );
 
-    event OrderCanceled (
+    event OrderCanceled(
         address indexed account,
         uint256 indexed orderIndex,
         uint256 indexed gameId,
@@ -70,7 +73,7 @@ contract Bets is ReentrancyGuard, GameOracle {
         uint256 contractAmount
     );
 
-    event OrderExecuted (
+    event OrderExecuted(
         address indexed accountSideA,
         address indexed accountSideB,
         uint256 indexed gameId,
@@ -79,13 +82,13 @@ contract Bets is ReentrancyGuard, GameOracle {
         uint256 contractAmount
     );
 
-    modifier onlyAdmin() {
-        require(msg.sender == admin, "Forbidden");
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Forbidden, not owner");
         _;
     }
-
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Forbidden");
+    
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Forbidden, not admin");
         _;
     }
 
@@ -97,9 +100,8 @@ contract Bets is ReentrancyGuard, GameOracle {
     ) GameOracle(_link, _oracle) {
         usdc = _usdc;
         admin = _admin;
+        owner = msg.sender;
     }
-
-    //matching function?
 
     /**
      * @notice deposits the stake determined by the user.
@@ -149,12 +151,31 @@ contract Bets is ReentrancyGuard, GameOracle {
         emit StakeReturned(address(this), _account1, _account2, usdc, _amountAcc1, _amountAcc2);
     }
 
+    /**
+     * @notice sets the fee paid by the winner on execution of the order
+     * @param _newFee the new fee that needs to be paid per order execution
+     */
+    function setExecutionFee(uint256 _newFee) external onlyAdmin {
+        require(_newFee <= 500 && _newFee >= 1, "New fee out of range");
+        executionFee = _newFee;
+    }
+
+    /**
+     * @notice sends execution order fee to owner
+     * @param _usdcAmount the amount that is sent to the winner upon execution of the order
+     */
+    function sendFeeToOwner(uint256 _usdcAmount) internal returns(uint256) {
+        uint256 fee = (_usdcAmount * executionFee) / 10000;
+        IERC20(usdc).safeTransfer(owner, fee);
+        emit FeeTransferred(owner,fee);
+        return fee;
+    }
 
     /**
      * @notice changes the admin address
      * @param newAdmin the address of the new admin
      */
-    function changeAdmin(address newAdmin) external onlyOwner {
+    function setAdmin(address newAdmin) external onlyOwner {
         admin = newAdmin;
     }
 
@@ -337,11 +358,13 @@ contract Bets is ReentrancyGuard, GameOracle {
         //if home wins --> bet won by side A
         if (game.homeScore > game.awayScore) {
             require(msg.sender == orderSideA.account, "You are not the winner");
-            transferStake(orderSideA.account, _totalTransfer); 
+            uint256 _feeAdjustedTransfer = _totalTransfer - sendFeeToOwner(_totalTransfer);
+            transferStake(orderSideA.account, _feeAdjustedTransfer); 
         //if away wins --> bet won by side B
         } else if (game.awayScore > game.homeScore) {
             require(msg.sender == orderSideB.account, "You are not the winner");
-            transferStake(orderSideB.account, _totalTransfer);
+            uint256 _feeAdjustedTransfer = _totalTransfer - sendFeeToOwner(_totalTransfer);
+            transferStake(orderSideB.account, _feeAdjustedTransfer);
         //if draw --> return funds back to users
         } else {
             returnFunds(orderSideA.account, orderSideB.account, _transferAmountSideA, _transferAmountSideB);
