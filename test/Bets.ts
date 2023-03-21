@@ -218,6 +218,9 @@ describe.only("Bets", () => {
       const orderIndexSideA = await bets.ordersIndex(sideA, gameId);
       const orderIndexSideB = await bets.ordersIndex(sideB, gameId);
       const totalAmountTransferred = betPriceSideA.mul(contractAmount).add(betPriceSideB.mul(contractAmount));
+      const fee = await bets.executionFee();
+      const feeAmount = totalAmountTransferred.mul(fee).div(10000);
+      const feeAdjustedAmountTransferred = totalAmountTransferred.sub(feeAmount);
       const executeOrder = await bets.connect(addresses[6]).executeOrder(
         requestId, 
         0, 
@@ -225,6 +228,16 @@ describe.only("Bets", () => {
         sideB,  
         orderIndexSideA, 
         orderIndexSideB);
+      expect(executeOrder).to.emit(bets, "FeeTransferred").withArgs(
+        await deployer.getAddress(),
+        feeAmount
+      );
+      expect(executeOrder).to.emit(bets, "StakeTransferred").withArgs(
+        bets.address,
+        sideA,
+        usdc.address,
+        feeAdjustedAmountTransferred
+      );  
       expect(executeOrder).to.emit(bets, "OrderExecuted"
       ).withArgs(
         sideA, 
@@ -233,12 +246,6 @@ describe.only("Bets", () => {
         betPriceSideA,
         betPriceSideB,
         contractAmount
-      );
-      expect(executeOrder).to.emit(bets, "StakeTransferred").withArgs(
-        bets.address,
-        sideA,
-        usdc.address,
-        totalAmountTransferred
       );
     });
 
@@ -257,6 +264,9 @@ describe.only("Bets", () => {
       const orderIndexAccount1 = await bets.ordersIndex(sideA, gameId);
       const orderIndexAccount2 = await bets.ordersIndex(sideB, gameId);
       const totalAmountTransferred = betPriceSideA.mul(contractAmount).add(betPriceSideB.mul(contractAmount));
+      const fee = await bets.executionFee();
+      const feeAmount = totalAmountTransferred.mul(fee).div(10000);
+      const feeAdjustedAmountTransferred = totalAmountTransferred.sub(feeAmount);
       const executeOrder = await bets.connect(addresses[7]).executeOrder(
         requestId, 
         0, 
@@ -264,6 +274,16 @@ describe.only("Bets", () => {
         sideB,  
         orderIndexAccount1, 
         orderIndexAccount2);
+      expect(executeOrder).to.emit(bets, "FeeTransferred").withArgs(
+        await deployer.getAddress(),
+        feeAmount
+      );  
+      expect(executeOrder).to.emit(bets, "StakeTransferred").withArgs(
+        bets.address,
+        sideB,
+        usdc.address,
+        feeAdjustedAmountTransferred
+      );  
       expect(executeOrder).to.emit(bets, "OrderExecuted"
       ).withArgs(
         sideA, 
@@ -272,12 +292,6 @@ describe.only("Bets", () => {
         betPriceSideA,
         betPriceSideB,
         contractAmount
-      );
-      expect(executeOrder).to.emit(bets, "StakeTransferred").withArgs(
-        bets.address,
-        sideB,
-        usdc.address,
-        totalAmountTransferred
       );
     });
 
