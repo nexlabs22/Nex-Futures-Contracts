@@ -20,7 +20,6 @@ contract Bets is ReentrancyGuard, GameOracle {
     Counters.Counter public betCounter;
 
     mapping(uint256 => Bet) public bets;
-    mapping(address => mapping(uint256 => Bet)) public userBets;
     mapping(address => uint256) public betsIndex;
 
     struct Bet {
@@ -161,7 +160,6 @@ contract Bets is ReentrancyGuard, GameOracle {
             );
 
             betsIndex[msg.sender] += 1;
-            userBets[msg.sender][_betIndex] = filledBet;
 
             bets[_betIndex] = filledBet;
 
@@ -187,9 +185,7 @@ contract Bets is ReentrancyGuard, GameOracle {
             );
 
             betsIndex[msg.sender] += 1;
-            uint256 _betIndexA = betsIndex[msg.sender];
 
-            bets[_betIndexA] = filledBet;
             bets[_betIndex] = filledBet;
 
             uint256 complimentaryStake = bet.betPriceA.mul(bet.contractAmount);
@@ -229,15 +225,6 @@ contract Bets is ReentrancyGuard, GameOracle {
     }
 
     /**
-     * @notice sets the fee paid by the winner on execution of the order
-     * @param _newFee the new fee that needs to be paid per order execution
-     */
-    function setExecutionFee(uint256 _newFee) external onlyAdmin {
-        require(_newFee <= 100 && _newFee >= 1, "New fee out of range");
-        executionFee = _newFee;
-    }
-
-    /**
      * @notice sends execution order fee to owner
      * @param _usdcAmount the amount that is sent to the winner upon execution of the order
      */
@@ -249,23 +236,9 @@ contract Bets is ReentrancyGuard, GameOracle {
     }
 
     /**
-     * @notice changes the admin address
-     * @param newAdmin the address of the new admin
-     */
-    function setAdmin(address newAdmin) external onlyOwner {
-        admin = newAdmin;
-    }
-    
-    function createBetA(        
-        uint256 _betPrice, 
-        uint256 _contractAmount
-        ) external nonReentrant {
-        _createBetA(_betPrice, _contractAmount);
-    }
-
-    /**
      * @notice creates a side A order
-     * @param _contractAmount the amount of bet contracts set by the user.
+     * @param _betPrice the price of the bet determined by the user
+     * @param _contractAmount the amount of bet contracts set by the user
      */
     function _createBetA(
         uint256 _betPrice, 
@@ -279,10 +252,6 @@ contract Bets is ReentrancyGuard, GameOracle {
             (10**18 - _betPrice),
             _contractAmount
         );
-
-        betsIndex[msg.sender] += 1;
-        uint256 _userBetIndex = betsIndex[msg.sender];
-        userBets[msg.sender][_userBetIndex] = bet; //this or use events index?
 
         betCounter.increment();
         uint256 _betIndex = betCounter.current();
@@ -303,13 +272,6 @@ contract Bets is ReentrancyGuard, GameOracle {
         );
     }
 
-    function createBetB(        
-        uint256 _betPrice, 
-        uint256 _contractAmount
-        ) external nonReentrant {
-        _createBetB(_betPrice, _contractAmount);
-    }
-
     /**
      * @notice creates a side B order
      * @param _contractAmount the amount of bet contracts set by the user.
@@ -326,10 +288,6 @@ contract Bets is ReentrancyGuard, GameOracle {
             _betPrice,
             _contractAmount
         );
-
-        betsIndex[msg.sender] += 1;
-        uint256 _userBetIndex = betsIndex[msg.sender];
-        userBets[msg.sender][_userBetIndex] = bet; //this or use events index?
 
         betCounter.increment();
         uint256 _betIndex = betCounter.current();
@@ -348,6 +306,23 @@ contract Bets is ReentrancyGuard, GameOracle {
             bet.betPriceB,
             bet.contractAmount
         );
+    }
+
+    /**
+     * @notice changes the admin address
+     * @param newAdmin the address of the new admin
+     */
+    function setAdmin(address newAdmin) external onlyOwner {
+        admin = newAdmin;
+    }
+
+    /**
+     * @notice sets the fee paid by the winner on execution of the order
+     * @param _newFee the new fee that needs to be paid per order execution
+     */
+    function setExecutionFee(uint256 _newFee) external onlyAdmin {
+        require(_newFee <= 100 && _newFee >= 1, "New fee out of range");
+        executionFee = _newFee;
     }
 
     /**
@@ -460,7 +435,7 @@ contract Bets is ReentrancyGuard, GameOracle {
      * @param _idx match Id returned by requestGame function 
      * @param _betIndex the index of the bet that will be executed
      */
-    function executeBet(   //--> execute based on info in Bet struct   
+    function executeBet(  
         bytes32 _requestId, 
         uint256 _idx,
         uint256 _betIndex
@@ -476,7 +451,6 @@ contract Bets is ReentrancyGuard, GameOracle {
 
         uint256 _totalStake = bet.betPriceA.add(bet.betPriceB).mul(bet.contractAmount);
 
-        //if home wins --> bet won by side A
         if (game.homeScore > game.awayScore) {
             require(msg.sender == bet.accountA, "You are not the winner");
             uint256 _feeAdjustedStake = _totalStake - sendFeeToOwner(_totalStake);
@@ -489,7 +463,6 @@ contract Bets is ReentrancyGuard, GameOracle {
                 bet.betPriceB,
                 bet.contractAmount
             );
-        //if away wins --> bet won by side B
         } else if (game.awayScore > game.homeScore) {
             require(msg.sender == bet.accountB, "You are not the winner");
             uint256 _feeAdjustedStake = _totalStake - sendFeeToOwner(_totalStake);
@@ -502,7 +475,7 @@ contract Bets is ReentrancyGuard, GameOracle {
                 bet.betPriceA,
                 bet.contractAmount
             );
-        //if draw --> return funds back to users
+
         } else {
             returnFunds(bet.accountA, bet.accountB, 
             (bet.betPriceA.mul(bet.contractAmount)), 
@@ -511,6 +484,30 @@ contract Bets is ReentrancyGuard, GameOracle {
 
         delete bets[_betIndex];
 
+    }
+    
+    /**
+     * @notice creates a side A order
+     * @param _betPrice the price of the bet determined by the user
+     * @param _contractAmount the amount of bet contracts set by the user
+     */
+    function createBetA(        
+        uint256 _betPrice, 
+        uint256 _contractAmount
+        ) external nonReentrant {
+        _createBetA(_betPrice, _contractAmount);
+    }
+
+    /**
+     * @notice creates a side B order
+     * @param _betPrice the price of the bet determined by the user
+     * @param _contractAmount the amount of bet contracts set by the user
+     */
+    function createBetB(        
+        uint256 _betPrice, 
+        uint256 _contractAmount
+        ) external nonReentrant {
+        _createBetB(_betPrice, _contractAmount);
     }
 
     /**
