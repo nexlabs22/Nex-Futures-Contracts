@@ -6,25 +6,27 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {GameOracle} from "./GameOracle.sol";
+import {Counters} from "@openzeppelin/contracts/utils/Counters.sol";
 
 contract Bets is ReentrancyGuard, GameOracle {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
+    using Counters for Counters.Counter;
 
     address public usdc;
     address public owner;
     address public admin;
     uint256 public executionFee = 10; //=> 10/10000 = 0.1%
+    Counters.Counter public betCounter;
 
-    mapping(uint256 => mapping(uint256 => Order)) public ordersSideA;
-    mapping(uint256 => mapping(uint256 => Order)) public ordersSideB;
+    mapping(uint256 => Bet) public bets;
+    mapping(address => uint256) public betsIndex;
 
-    mapping(address => mapping(uint256 => uint256)) public ordersIndex;
-
-    struct Order {
-        address account;
-        uint256 gameId;
-        uint256 betPrice;
+    struct Bet {
+        address accountA; 
+        address accountB; 
+        uint256 betPriceA;
+        uint256 betPriceB;
         uint256 contractAmount;
     }
 
@@ -49,34 +51,43 @@ contract Bets is ReentrancyGuard, GameOracle {
         uint256 amount2
     );
 
-    event OrderCreatedSideA(
+    event BetACreated(
+        address indexed accountA,
+        address accountB,
+        uint256 indexed betIndex,
+        uint256 betPriceA,
+        uint256 betPriceB,
+        uint256 contractAmount
+    );
+
+    event BetBCreated(
+        address accountA,
+        address indexed accountB,
+        uint256 indexed betIndex,
+        uint256 betPriceA,
+        uint256 betPriceB,
+        uint256 contractAmount
+    );
+
+    event BetTaken(
+        address indexed accountA,
+        address indexed accountB,
+        uint256 indexed betIndex,
+        uint256 betPriceA,
+        uint256 betPriceB,
+        uint256 contractAmount
+    );
+
+    event BetCanceled(
         address indexed account,
-        uint256 indexed orderIndex,
-        uint256 indexed gameId,
+        uint256 indexed betIndex,
         uint256 betPrice,
         uint256 contractAmount
     );
 
-    event OrderCreatedSideB(
-        address indexed account,
-        uint256 indexed orderIndex,
-        uint256 indexed gameId,
-        uint256 betPrice,
-        uint256 contractAmount
-    );
-
-    event OrderCanceled(
-        address indexed account,
-        uint256 indexed orderIndex,
-        uint256 indexed gameId,
-        uint256 betPrice,
-        uint256 contractAmount
-    );
-
-    event OrderExecuted(
-        address indexed accountSideA,
-        address indexed accountSideB,
-        uint256 indexed gameId,
+    event BetExecuted(
+        address indexed winner,
+        address indexed loser,
         uint256 winnerBetPrice,
         uint256 loserBetPrice,
         uint256 contractAmount
@@ -130,6 +141,68 @@ contract Bets is ReentrancyGuard, GameOracle {
 
         emit StakeTransferred(address(this), _account, usdc, _amount);
     }
+    /**
+     * @notice allows user to take an existing bet
+     * @param _betIndex the index of the taken bet
+     */
+    function takeBet(uint256 _betIndex) external nonReentrant {
+
+        Bet memory bet = bets[_betIndex];
+
+        if(bet.accountB == address(0)) {
+
+            Bet memory filledBet = Bet(
+                bet.accountA,
+                msg.sender,
+                bet.betPriceA,
+                bet.betPriceB,
+                bet.contractAmount
+            );
+
+            betsIndex[msg.sender] += 1;
+
+            bets[_betIndex] = filledBet;
+
+            uint256 complimentaryStake = bet.betPriceB.mul(bet.contractAmount);
+            depositStake(complimentaryStake);
+
+            emit BetTaken(
+                bet.accountA,
+                msg.sender,
+                _betIndex,
+                bet.betPriceA,
+                bet.betPriceB,
+                bet.contractAmount
+            );
+
+        } else if(bet.accountA == address(0)) {
+            Bet memory filledBet = Bet(
+                msg.sender,
+                bet.accountB,
+                bet.betPriceA,
+                bet.betPriceB,
+                bet.contractAmount
+            );
+
+            betsIndex[msg.sender] += 1;
+
+            bets[_betIndex] = filledBet;
+
+            uint256 complimentaryStake = bet.betPriceA.mul(bet.contractAmount);
+            depositStake(complimentaryStake);
+
+            emit BetTaken(
+                msg.sender,
+                bet.accountB,
+                _betIndex,
+                bet.betPriceA,
+                bet.betPriceB,
+                bet.contractAmount
+            );
+        } else {
+            revert("Bet has already been filled");
+        }
+    }
 
     /**
      * @notice returns the funds of both stakers
@@ -152,15 +225,6 @@ contract Bets is ReentrancyGuard, GameOracle {
     }
 
     /**
-     * @notice sets the fee paid by the winner on execution of the order
-     * @param _newFee the new fee that needs to be paid per order execution
-     */
-    function setExecutionFee(uint256 _newFee) external onlyAdmin {
-        require(_newFee <= 500 && _newFee >= 1, "New fee out of range");
-        executionFee = _newFee;
-    }
-
-    /**
      * @notice sends execution order fee to owner
      * @param _usdcAmount the amount that is sent to the winner upon execution of the order
      */
@@ -172,6 +236,79 @@ contract Bets is ReentrancyGuard, GameOracle {
     }
 
     /**
+     * @notice creates a side A order
+     * @param _betPrice the price of the bet determined by the user
+     * @param _contractAmount the amount of bet contracts set by the user
+     */
+    function _createBetA(
+        uint256 _betPrice, 
+        uint256 _contractAmount
+        ) internal {
+
+        Bet memory bet = Bet(
+            msg.sender,
+            address(0),
+            _betPrice,
+            (10**18 - _betPrice),
+            _contractAmount
+        );
+
+        betCounter.increment();
+        uint256 _betIndex = betCounter.current();
+
+        bets[_betIndex] = bet;
+
+        uint256 _stakedAmount = bet.betPriceA * bet.contractAmount;
+
+        depositStake(_stakedAmount);
+
+        emit BetACreated(
+            msg.sender,
+            address(0),
+            _betIndex,
+            bet.betPriceA,
+            bet.betPriceB,
+            bet.contractAmount
+        );
+    }
+
+    /**
+     * @notice creates a side B order
+     * @param _contractAmount the amount of bet contracts set by the user.
+     */
+    function _createBetB(
+        uint256 _betPrice, 
+        uint256 _contractAmount
+        ) internal {
+
+        Bet memory bet = Bet(
+            address(0),
+            msg.sender,
+            (10**18 - _betPrice),
+            _betPrice,
+            _contractAmount
+        );
+
+        betCounter.increment();
+        uint256 _betIndex = betCounter.current();
+
+        bets[_betIndex] = bet;
+
+        uint256 _stakedAmount = bet.betPriceB * bet.contractAmount;
+
+        depositStake(_stakedAmount);
+
+        emit BetBCreated(
+            address(0),
+            msg.sender,
+            _betIndex,
+            bet.betPriceA,
+            bet.betPriceB,
+            bet.contractAmount
+        );
+    }
+
+    /**
      * @notice changes the admin address
      * @param newAdmin the address of the new admin
      */
@@ -180,140 +317,114 @@ contract Bets is ReentrancyGuard, GameOracle {
     }
 
     /**
-     * @notice creates a side A order
-     * @param _gameId the id of the game of interest 
-     * @param _contractAmount the amount of bet contracts set by the user.
+     * @notice sets the fee paid by the winner on execution of the order
+     * @param _newFee the new fee that needs to be paid per order execution
      */
-    function createOrderSideA(
-        uint256 _gameId,
-        uint256 _betPrice, 
-        uint256 _contractAmount
-        ) external nonReentrant {
-
-        Order memory order = Order(
-            msg.sender,
-            _gameId,
-            _betPrice,
-            _contractAmount
-        );
-
-        ordersIndex[msg.sender][_gameId] += 1;
-        uint256 _orderIndex = ordersIndex[msg.sender][_gameId];
-
-        ordersSideA[_gameId][_orderIndex] = order;
-
-        uint256 _stakedAmount = order.betPrice * order.contractAmount;
-
-        depositStake(_stakedAmount);
-
-        emit OrderCreatedSideA(
-            msg.sender,
-            _orderIndex,
-            order.gameId,
-            order.betPrice,
-            order.contractAmount
-        );
-    }
-
-    /**
-     * @notice creates a side B order
-     * @param _gameId the id of the game of interest 
-     * @param _contractAmount the amount of bet contracts set by the user.
-     */
-    function createOrderSideB(
-        uint256 _gameId,
-        uint256 _betPrice, 
-        uint256 _contractAmount
-        ) external nonReentrant {
-
-        Order memory order = Order(
-            msg.sender,
-            _gameId,
-            _betPrice,
-            _contractAmount
-        );
-
-        ordersIndex[msg.sender][_gameId] += 1;
-        uint256 _orderIndex = ordersIndex[msg.sender][_gameId];
-
-        ordersSideB[_gameId][_orderIndex] = order;
-
-        uint256 _stakedAmount = order.betPrice * order.contractAmount;
-
-        depositStake(_stakedAmount);
-
-        emit OrderCreatedSideB(
-            msg.sender,
-            _orderIndex,
-            order.gameId,
-            order.betPrice,
-            order.contractAmount
-        );
+    function setExecutionFee(uint256 _newFee) external onlyAdmin {
+        require(_newFee <= 100 && _newFee >= 1, "New fee out of range");
+        executionFee = _newFee;
     }
 
     /**
      * @notice Allows users to cancel side A orders
-     * @param _gameId the id of the game of interest 
-     * @param _orderIndex the index of the order for the _betIndex chosen by the user.
+     * @param _requestId the requestId returned by requestGame function
+     * @param _idx match Id returned by requestGame function 
+     * @param _betIndex the index of the order for the _betIndex chosen by the user.
      */
-    function cancelOrderSideA(
-        uint256 _gameId,
-        uint256 _orderIndex
+    function cancelBetA(
+        bytes32 _requestId,
+        uint256 _idx,
+        uint256 _betIndex
     ) external nonReentrant {
         require(
             msg.sender != address(0)
-            || _orderIndex != 0, 
+            || _betIndex != 0, 
             "Order does not exist");
 
-        Order memory order = ordersSideA[_gameId][_orderIndex];
+        GameResolve memory game = getGameResult(_requestId, _idx);
+        uint256 _statusId = game.statusId;
 
-        require(msg.sender == order.account, "Not your order");
+        Bet memory bet = bets[_betIndex];
 
-        uint256 _stakedAmount = order.betPrice * order.contractAmount;
+        require(msg.sender == bet.accountA, "Not your order");
 
-        delete ordersSideB[_gameId][_orderIndex];
+        uint256 _stakedAmount = bet.betPriceA * bet.contractAmount;
 
-        transferStake(msg.sender, _stakedAmount);
+        bool beforeGame = _statusId == 10 || _statusId == 13;
+        bool betMatch = bet.accountA != address(0) && bet.accountB != address(0);
+        bool noMatch = bet.accountB == address(0);
 
-        emit OrderCanceled(
+        if (beforeGame) {
+            if (betMatch) {
+                delete bets[_betIndex];
+                _createBetB(bet.betPriceB, bet.contractAmount);
+                transferStake(msg.sender, _stakedAmount);
+
+            } else if (noMatch) {
+                delete bets[_betIndex];
+                transferStake(msg.sender, _stakedAmount);
+            }
+        } else {
+            revert("Game started, cannot cancel order");
+        }
+
+        emit BetCanceled(
             msg.sender,
-            _orderIndex,
-            order.gameId,
-            order.betPrice,
-            order.contractAmount
+            _betIndex,
+            bet.betPriceA,
+            bet.contractAmount
         );
     }
 
+    
+
     /**
      * @notice Allows users to cancel side B orders
-     * @param _gameId the id of the game of interest 
-     * @param _orderIndex the index of the order for the _betIndex chosen by the user.
+     * @param _requestId the requestId returned by requestGame function
+     * @param _idx match Id returned by requestGame function 
+     * @param _betIndex the index of the order for the _betIndex chosen by the user.
      */
-    function cancelOrderSideB(
-        uint256 _gameId,
-        uint256 _orderIndex
+    function cancelBetB(
+        bytes32 _requestId,
+        uint256 _idx,
+        uint256 _betIndex
     ) external nonReentrant {
         require(
             msg.sender != address(0)
-            || _orderIndex != 0, 
+            || _betIndex != 0, 
             "Order does not exist");
 
-        Order memory order = ordersSideB[_gameId][_orderIndex];
+        GameResolve memory game = getGameResult(_requestId, _idx);
+        uint256 _statusId = game.statusId;
 
-        require(msg.sender == order.account, "Not your order");
+        Bet memory bet = bets[_betIndex];
 
-        uint256 _stakedAmount = order.betPrice * order.contractAmount;
+        require(msg.sender == bet.accountB, "Not your order");
 
-        delete ordersSideB[_gameId][_orderIndex];
+        uint256 _stakedAmount = bet.betPriceB * bet.contractAmount;
 
-        transferStake(msg.sender, _stakedAmount);
+        bool beforeGame = _statusId == 10 || _statusId == 13;
+        bool betMatch = bet.accountA != address(0) && bet.accountB != address(0);
+        bool noMatch = bet.accountA == address(0);
 
-        emit OrderCanceled(
+        if (beforeGame) {
+            if (betMatch) {
+                delete bets[_betIndex];
+                _createBetA(bet.betPriceA, bet.contractAmount);
+                transferStake(msg.sender, _stakedAmount);
+            } else if (noMatch) {
+                delete bets[_betIndex];
+                transferStake(msg.sender, _stakedAmount);
+            }
+        } else {
+            revert("Game started, cannot cancel order");
+        }
+
+        emit BetCanceled(
             msg.sender,
-            _orderIndex,
-            order.gameId,
-            order.betPrice,
-            order.contractAmount
+            _betIndex,
+            bet.betPriceB,
+            bet.contractAmount
         );
     }
 
@@ -322,66 +433,81 @@ contract Bets is ReentrancyGuard, GameOracle {
      * @notice Executes the winning order/bet
      * @param _requestId the requestId returned by requestGame function
      * @param _idx match Id returned by requestGame function 
-     * @param _sideA the address of the winner of the bet
-     * @param _sideB the address of the loser of the bet
-     * @param _orderIndexSideA the index of the order for the _betIndex chosen by the user.
-     * @param _orderIndexSideB the index of the order for the _betIndex chosen by the loser.
+     * @param _betIndex the index of the bet that will be executed
      */
-    function executeOrder(        
+    function executeBet(  
         bytes32 _requestId, 
         uint256 _idx,
-        address _sideA,
-        address _sideB,
-        uint256 _orderIndexSideA,
-        uint256 _orderIndexSideB
+        uint256 _betIndex
         ) external nonReentrant {
 
-        require(
-            _sideA != address(0)
-            || _sideB != address(0) 
-            || _orderIndexSideA != 0
-            || _orderIndexSideB != 0, 
-            "Order does not exist");
+        require(_betIndex != 0, "Order does not exist");
         
         GameResolve memory game = getGameResult(_requestId, _idx);
-        uint256 _gameId = uint256(game.gameId);
 
-        Order memory orderSideA = ordersSideA[_gameId][_orderIndexSideA];
-        Order memory orderSideB = ordersSideB[_gameId][_orderIndexSideB];
+        Bet memory bet = bets[_betIndex];
 
-        require(orderSideA.betPrice == (10**18 - orderSideB.betPrice), "Bet prices do not match");
+        require(bet.accountA != address(0) && bet.accountB != address(0), "Bet has not been filled");
 
-        uint256 _transferAmountSideA = orderSideA.betPrice.mul(orderSideA.contractAmount);
-        uint256 _transferAmountSideB = orderSideB.betPrice.mul(orderSideB.contractAmount);
-        uint256 _totalTransfer = _transferAmountSideA.add(_transferAmountSideB);
+        uint256 _totalStake = bet.betPriceA.add(bet.betPriceB).mul(bet.contractAmount);
 
-        //if home wins --> bet won by side A
         if (game.homeScore > game.awayScore) {
-            require(msg.sender == orderSideA.account, "You are not the winner");
-            uint256 _feeAdjustedTransfer = _totalTransfer - sendFeeToOwner(_totalTransfer);
-            transferStake(orderSideA.account, _feeAdjustedTransfer); 
-        //if away wins --> bet won by side B
+            require(msg.sender == bet.accountA, "You are not the winner");
+            uint256 _feeAdjustedStake = _totalStake - sendFeeToOwner(_totalStake);
+            transferStake(bet.accountA, _feeAdjustedStake);
+
+            emit BetExecuted(
+                bet.accountA,
+                bet.accountB,
+                bet.betPriceA,
+                bet.betPriceB,
+                bet.contractAmount
+            );
         } else if (game.awayScore > game.homeScore) {
-            require(msg.sender == orderSideB.account, "You are not the winner");
-            uint256 _feeAdjustedTransfer = _totalTransfer - sendFeeToOwner(_totalTransfer);
-            transferStake(orderSideB.account, _feeAdjustedTransfer);
-        //if draw --> return funds back to users
+            require(msg.sender == bet.accountB, "You are not the winner");
+            uint256 _feeAdjustedStake = _totalStake - sendFeeToOwner(_totalStake);
+            transferStake(bet.accountB, _feeAdjustedStake);
+
+            emit BetExecuted(
+                bet.accountB,
+                bet.accountA,
+                bet.betPriceB,
+                bet.betPriceA,
+                bet.contractAmount
+            );
+
         } else {
-            returnFunds(orderSideA.account, orderSideB.account, _transferAmountSideA, _transferAmountSideB);
+            returnFunds(bet.accountA, bet.accountB, 
+            (bet.betPriceA.mul(bet.contractAmount)), 
+            (bet.betPriceB.mul(bet.contractAmount)));
         }
 
-        delete ordersSideA[_gameId][_orderIndexSideA];
-        delete ordersSideB[_gameId][_orderIndexSideB];
+        delete bets[_betIndex];
 
-        emit OrderExecuted(
-            orderSideA.account,
-            orderSideB.account,
-            orderSideA.gameId,
-            orderSideA.betPrice,
-            orderSideB.betPrice,
-            orderSideA.contractAmount
-        );
+    }
+    
+    /**
+     * @notice creates a side A order
+     * @param _betPrice the price of the bet determined by the user
+     * @param _contractAmount the amount of bet contracts set by the user
+     */
+    function createBetA(        
+        uint256 _betPrice, 
+        uint256 _contractAmount
+        ) external nonReentrant {
+        _createBetA(_betPrice, _contractAmount);
+    }
 
+    /**
+     * @notice creates a side B order
+     * @param _betPrice the price of the bet determined by the user
+     * @param _contractAmount the amount of bet contracts set by the user
+     */
+    function createBetB(        
+        uint256 _betPrice, 
+        uint256 _contractAmount
+        ) external nonReentrant {
+        _createBetB(_betPrice, _contractAmount);
     }
 
     /**
