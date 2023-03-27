@@ -173,10 +173,11 @@ describe.only("Bets", () => {
       await bets.connect(addresses[1]).createBetB(betPriceB, contractAmount);
       const betIndex = await bets.betCounter();
       const bet = await bets.bets(betIndex);
+      const betPriceBUsingStruct = ONE_TOKEN.sub(bet.betPrice); 
       expect(bet.accountA).to.equal(ZERO_ADDRESS);
       expect(bet.accountB).to.equal(user);
-      expect(bet.betPriceA).to.equal(betPriceA);
-      expect(bet.betPriceB).to.equal(betPriceB);
+      expect(bet.betPrice).to.equal(betPriceA);
+      expect(betPriceBUsingStruct).to.equal(betPriceB);
       expect(bet.contractAmount).to.equal(contractAmount);
     });
   });
@@ -186,6 +187,8 @@ describe.only("Bets", () => {
       setupBets
       await usdc.transfer(await addresses[0].getAddress(), THOUSAND_TOKENS);
       await usdc.connect(addresses[0]).approve(bets.address, HUNDRED_TOKENS);
+      await usdc.transfer(await addresses[1].getAddress(), THOUSAND_TOKENS);
+      await usdc.connect(addresses[1]).approve(bets.address, HUNDRED_TOKENS);
       const requestId:any = await requestGame();
       await changeOracleData(1, 2, requestId);
     });
@@ -201,7 +204,7 @@ describe.only("Bets", () => {
       const cancelBet = await bets.connect(addresses[1]).cancelBetA(requestId, 0, betIndex);
       expect(cancelBet
         ).to.emit(bets, "BetCanceled").withArgs(
-          bet.accountA, betIndex, bet.betPriceA, contractAmount
+          bet.accountA, betIndex, bet.betPrice, contractAmount
       );
     });
 
@@ -214,9 +217,10 @@ describe.only("Bets", () => {
       const betIndex = await bets.betCounter();
       const bet = await bets.bets(betIndex);
       const cancelBet = await bets.connect(addresses[1]).cancelBetB(requestId, 0, betIndex);
+      const betPriceBUsingStruct = ONE_TOKEN.sub(bet.betPrice);
       expect(cancelBet
         ).to.emit(bets, "BetCanceled").withArgs(
-          bet.accountB, betIndex, bet.betPriceB, contractAmount
+          bet.accountB, betIndex, betPriceBUsingStruct, contractAmount
       );
     });
 
@@ -232,13 +236,13 @@ describe.only("Bets", () => {
       const cancelBetA = await bets.connect(addresses[0]).cancelBetA(requestId, 0, betIndex);
       expect(cancelBetA
         ).to.emit(bets, "BetCanceled").withArgs(
-          bet.accountA, betIndex, bet.betPriceA, bet.contractAmount
+          bet.accountA, betIndex, bet.betPrice, bet.contractAmount
       );
       const betIndexV2 = await bets.betCounter();
       const betV2 = await bets.bets(betIndexV2);
       expect(cancelBetA
         ).to.emit(bets, "BetBCreated").withArgs(
-          ZERO_ADDRESS, betV2.accountB, betIndexV2, betV2.betPriceA, betV2.betPriceB, betV2.contractAmount
+          ZERO_ADDRESS, betV2.accountB, betIndexV2, betV2.betPrice, ONE_TOKEN.sub(bet.betPrice), betV2.contractAmount
       );
     });
 
@@ -254,13 +258,13 @@ describe.only("Bets", () => {
       const cancelBetB = await bets.connect(addresses[1]).cancelBetB(requestId, 0, betIndex);
       expect(cancelBetB
         ).to.emit(bets, "BetCanceled").withArgs(
-          bet.accountB, betIndex, bet.betPriceB, bet.contractAmount
+          bet.accountB, betIndex, ONE_TOKEN.sub(bet.betPrice), bet.contractAmount
       );
       const betIndexV2 = await bets.betCounter();
       const betV2 = await bets.bets(betIndexV2);
       expect(cancelBetB
         ).to.emit(bets, "BetACreated").withArgs(
-          betV2.accountA, ZERO_ADDRESS, betIndexV2, betV2.betPriceA, betV2.betPriceB, betV2.contractAmount
+          betV2.accountA, ZERO_ADDRESS, betIndexV2, betV2.betPrice, ONE_TOKEN.sub(betV2.betPrice), betV2.contractAmount
       );
     });
 
@@ -294,7 +298,7 @@ describe.only("Bets", () => {
       const bet = await bets.bets(betsIndex);
       const takeBet = await bets.connect(addresses[5]).takeBet(betsIndex);
       expect(takeBet).to.emit(bets, "BetTaken").withArgs(
-        bet.accountA, sideB, betsIndex, bet.betPriceA, bet.betPriceB, bet.contractAmount
+        bet.accountA, sideB, betsIndex, bet.betPrice, ONE_TOKEN.sub(bet.betPrice), bet.contractAmount
       );
     });
 
@@ -308,10 +312,11 @@ describe.only("Bets", () => {
       const betsIndex = await bets.betCounter();
       await bets.connect(addresses[5]).takeBet(betsIndex);
       const bet = await bets.bets(betsIndex);
+      const betPriceBUsingStruct = ONE_TOKEN.sub(bet.betPrice);
       expect(bet.accountA).to.equal(sideA);
       expect(bet.accountB).to.equal(sideB);
-      expect(bet.betPriceA).to.equal(betPriceA);
-      expect(bet.betPriceB).to.equal(betPriceB);
+      expect(bet.betPrice).to.equal(betPriceA);
+      expect(betPriceBUsingStruct).to.equal(betPriceB);
       expect(bet.contractAmount).to.equal(contractAmount);
     });
   });
@@ -397,9 +402,9 @@ describe.only("Bets", () => {
       expect(executeBets).to.emit(bets, "BetExecuted"
       ).withArgs(
         bet.accountB, 
-        bet.accountA,  
-        bet.betPriceB,
-        bet.betPriceA,
+        bet.accountA,
+        ONE_TOKEN.sub(bet.betPrice),  
+        bet.betPrice,
         bet.contractAmount
       );
     });
@@ -429,8 +434,9 @@ describe.only("Bets", () => {
       const betsIndex = await bets.betCounter();
       await bets.connect(addresses[7]).takeBet(betsIndex);
       const bet = await bets.bets(betsIndex);
-      const totalAmountA = bet.betPriceA.mul(bet.contractAmount);
-      const totalAmountB = bet.betPriceB.mul(bet.contractAmount);
+      const totalAmountA = bet.betPrice.mul(bet.contractAmount);
+      const betPriceBUsingStruct = ONE_TOKEN.sub(bet.betPrice);
+      const totalAmountB = betPriceBUsingStruct.mul(bet.contractAmount);
       const executeWinner = await bets.connect(addresses[7]).executeBet(
         requestId, 
         0,
