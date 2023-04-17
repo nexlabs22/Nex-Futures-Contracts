@@ -4,6 +4,9 @@ pragma solidity 0.8.17;
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
 
 /**
+
+https://api-sports.io/documentation/football/v3#tag/Fixtures/operation/get-fixtures-rounds
+
  * Supported `sportId`
  * --------------------
  * NCAA Men's Football: 1
