@@ -15,9 +15,11 @@ chai.use(solidity);
 const { expect } = chai;
 
 const provider = ethers.provider;
-const POINT_TWO_TOKENS = ethers.BigNumber.from("200000000000000000") as BigNumber;
-const POINT_SIX_TOKENS = ethers.BigNumber.from("600000000000000000") as BigNumber;
-const POINT_EIGHT_TOKENS = ethers.BigNumber.from("800000000000000000") as BigNumber;
+const POINT_TWO = ethers.BigNumber.from("2") as BigNumber;
+const POINT_SIX = ethers.BigNumber.from("6") as BigNumber;
+const POINT_EIGHT = ethers.BigNumber.from("8") as BigNumber;
+const ONE = ethers.BigNumber.from("10") as BigNumber;
+const POINT_ONE_TOKEN = ethers.BigNumber.from("100000000000000000") as BigNumber;
 const ONE_TOKEN = ethers.BigNumber.from("1000000000000000000") as BigNumber;
 const TEN_TOKENS = ethers.BigNumber.from("10000000000000000000") as BigNumber;
 const HUNDRED_TOKENS = ethers.BigNumber.from("100000000000000000000") as BigNumber;
@@ -143,8 +145,8 @@ describe.only("Bets", () => {
 
     it("creates a bet for side A and emits the event", async () => {
       const user = await addresses[0].getAddress();
-      const betPriceA = POINT_EIGHT_TOKENS;
-      const betPriceB = ONE_TOKEN.sub(betPriceA);
+      const betPriceA = POINT_EIGHT;
+      const betPriceB = ONE.sub(betPriceA);
       const contractAmount = 100;
       const createBetA = await bets.connect(addresses[0]).createBetA(betPriceA, contractAmount);
       const betIndex = await bets.betCounter();
@@ -155,8 +157,8 @@ describe.only("Bets", () => {
 
     it("creates a bet for side B and emits the event", async () => {
       const user = await addresses[1].getAddress();
-      const betPriceB = POINT_SIX_TOKENS;
-      const betPriceA = ONE_TOKEN.sub(betPriceB);
+      const betPriceB = POINT_SIX;
+      const betPriceA = ONE.sub(betPriceB);
       const contractAmount = 100;
       const createBetB = await bets.connect(addresses[1]).createBetB(betPriceB, contractAmount);
       const betIndex = await bets.betCounter();
@@ -167,13 +169,13 @@ describe.only("Bets", () => {
 
     it("adds a bet to the mapping", async () => {
       const user = await addresses[1].getAddress();
-      const betPriceB = POINT_SIX_TOKENS;
-      const betPriceA = ONE_TOKEN.sub(betPriceB);
+      const betPriceB = POINT_SIX;
+      const betPriceA = ONE.sub(betPriceB);
       const contractAmount = 100;
       await bets.connect(addresses[1]).createBetB(betPriceB, contractAmount);
       const betIndex = await bets.betCounter();
       const bet = await bets.bets(betIndex);
-      const betPriceBUsingStruct = ONE_TOKEN.sub(bet.betPrice); 
+      const betPriceBUsingStruct = ONE.sub(bet.betPrice); 
       expect(bet.accountA).to.equal(ZERO_ADDRESS);
       expect(bet.accountB).to.equal(user);
       expect(bet.betPrice).to.equal(betPriceA);
@@ -196,7 +198,7 @@ describe.only("Bets", () => {
     it("cancels an A bet before the game if there is no bet match", async () => {
       const requestId:any = await requestGame();
       await changeOracleDataV2(1, 2, requestId);
-      const betPriceA = POINT_EIGHT_TOKENS;
+      const betPriceA = POINT_EIGHT;
       const contractAmount = 10;
       await bets.connect(addresses[1]).createBetA(betPriceA, contractAmount);
       const betIndex = await bets.betCounter();
@@ -211,13 +213,13 @@ describe.only("Bets", () => {
     it("cancels a B bet before the game if there is no bet match", async () => {
       const requestId:any = await requestGame();
       await changeOracleDataV2(1, 2, requestId);
-      const betPriceB = POINT_TWO_TOKENS;
+      const betPriceB = POINT_TWO;
       const contractAmount = 10;
       await bets.connect(addresses[1]).createBetB(betPriceB, contractAmount);
       const betIndex = await bets.betCounter();
       const bet = await bets.bets(betIndex);
       const cancelBet = await bets.connect(addresses[1]).cancelBetB(requestId, 0, betIndex);
-      const betPriceBUsingStruct = ONE_TOKEN.sub(bet.betPrice);
+      const betPriceBUsingStruct = ONE.sub(bet.betPrice);
       expect(cancelBet
         ).to.emit(bets, "BetCanceled").withArgs(
           bet.accountB, betIndex, betPriceBUsingStruct, contractAmount
@@ -227,7 +229,7 @@ describe.only("Bets", () => {
     it("cancels an A bet before the game and if there is a bet match", async () => {
       const requestId:any = await requestGame();
       await changeOracleDataV2(1, 2, requestId);
-      const betPriceA = POINT_EIGHT_TOKENS;
+      const betPriceA = POINT_EIGHT;
       const contractAmount = 10;
       await bets.connect(addresses[0]).createBetA(betPriceA, contractAmount);
       const betIndex = await bets.betCounter();
@@ -242,14 +244,14 @@ describe.only("Bets", () => {
       const betV2 = await bets.bets(betIndexV2);
       expect(cancelBetA
         ).to.emit(bets, "BetBCreated").withArgs(
-          ZERO_ADDRESS, betV2.accountB, betIndexV2, betV2.betPrice, ONE_TOKEN.sub(bet.betPrice), betV2.contractAmount
+          ZERO_ADDRESS, betV2.accountB, betIndexV2, betV2.betPrice, ONE.sub(bet.betPrice), betV2.contractAmount
       );
     });
 
     it("cancels a B bet before the game and if there is a bet match", async () => {
       const requestId:any = await requestGame();
       await changeOracleDataV2(1, 2, requestId);
-      const betPriceB = POINT_TWO_TOKENS;
+      const betPriceB = POINT_TWO;
       const contractAmount = 10;
       await bets.connect(addresses[1]).createBetB(betPriceB, contractAmount);
       const betIndex = await bets.betCounter();
@@ -258,20 +260,20 @@ describe.only("Bets", () => {
       const cancelBetB = await bets.connect(addresses[1]).cancelBetB(requestId, 0, betIndex);
       expect(cancelBetB
         ).to.emit(bets, "BetCanceled").withArgs(
-          bet.accountB, betIndex, ONE_TOKEN.sub(bet.betPrice), bet.contractAmount
+          bet.accountB, betIndex, ONE.sub(bet.betPrice), bet.contractAmount
       );
       const betIndexV2 = await bets.betCounter();
       const betV2 = await bets.bets(betIndexV2);
       expect(cancelBetB
         ).to.emit(bets, "BetACreated").withArgs(
-          betV2.accountA, ZERO_ADDRESS, betIndexV2, betV2.betPrice, ONE_TOKEN.sub(betV2.betPrice), betV2.contractAmount
+          betV2.accountA, ZERO_ADDRESS, betIndexV2, betV2.betPrice, ONE.sub(betV2.betPrice), betV2.contractAmount
       );
     });
 
     it("reverts an A bet after the match started", async () => {
       const requestId:any = await requestGame();
       await changeOracleData(1, 2, requestId);
-      const betPriceA = POINT_EIGHT_TOKENS;
+      const betPriceA = POINT_EIGHT;
       const contractAmount = 10;
       await bets.connect(addresses[0]).createBetA(betPriceA, contractAmount);
       const betIndex = await bets.betCounter();
@@ -290,7 +292,7 @@ describe.only("Bets", () => {
     });
 
     it("takes an existing bet", async () => {
-      const betPriceA = POINT_EIGHT_TOKENS;
+      const betPriceA = POINT_EIGHT;
       const contractAmount = 10;
       const sideB = await addresses[5].getAddress();
       await bets.connect(addresses[4]).createBetA(betPriceA, contractAmount);
@@ -298,13 +300,13 @@ describe.only("Bets", () => {
       const bet = await bets.bets(betsIndex);
       const takeBet = await bets.connect(addresses[5]).takeBet(betsIndex);
       expect(takeBet).to.emit(bets, "BetTaken").withArgs(
-        bet.accountA, sideB, betsIndex, bet.betPrice, ONE_TOKEN.sub(bet.betPrice), bet.contractAmount
+        bet.accountA, sideB, betsIndex, bet.betPrice, ONE.sub(bet.betPrice), bet.contractAmount
       );
     });
 
     it("returns the fulfilled bet", async () => {
-      const betPriceA = POINT_EIGHT_TOKENS;
-      const betPriceB = ONE_TOKEN.sub(betPriceA);
+      const betPriceA = POINT_EIGHT;
+      const betPriceB = ONE.sub(betPriceA);
       const contractAmount = 10;
       const sideA = await addresses[4].getAddress();
       const sideB = await addresses[5].getAddress();
@@ -312,7 +314,7 @@ describe.only("Bets", () => {
       const betsIndex = await bets.betCounter();
       await bets.connect(addresses[5]).takeBet(betsIndex);
       const bet = await bets.bets(betsIndex);
-      const betPriceBUsingStruct = ONE_TOKEN.sub(bet.betPrice);
+      const betPriceBUsingStruct = ONE.sub(bet.betPrice);
       expect(bet.accountA).to.equal(sideA);
       expect(bet.accountB).to.equal(sideB);
       expect(bet.betPrice).to.equal(betPriceA);
@@ -333,14 +335,14 @@ describe.only("Bets", () => {
     it("Executes bets when home wins and emits the ExecutesOrder event", async () => {
       const requestId:any = await requestGame();
       await changeOracleData(2, 1, requestId); //home wins
-      const betPriceA = POINT_EIGHT_TOKENS;
-      const betPriceB = POINT_TWO_TOKENS;
+      const betPriceA = POINT_EIGHT;
+      const betPriceB = POINT_TWO;
       const contractAmount = 10;
       await bets.connect(addresses[6]).createBetA(betPriceA, contractAmount);
       const betsIndex = await bets.betCounter();
       await bets.connect(addresses[7]).takeBet(betsIndex);
       const bet = await bets.bets(betsIndex);
-      const totalAmountTransferred = betPriceA.mul(contractAmount).add(betPriceB.mul(contractAmount));
+      const totalAmountTransferred = POINT_ONE_TOKEN.mul(betPriceA.mul(contractAmount).add(betPriceB.mul(contractAmount)));
       const fee = await bets.executionFee();
       const feeAmount = totalAmountTransferred.mul(fee).div(10000);
       const feeAdjustedAmountTransferred = totalAmountTransferred.sub(feeAmount);
@@ -372,15 +374,15 @@ describe.only("Bets", () => {
     it("Executes bets when away wins and emits the ExecutesOrder event", async () => {
       const requestId:any = await requestGame();
       await changeOracleData(1, 2, requestId); //away wins
-      const betPriceA = POINT_EIGHT_TOKENS;
-      const betPriceB = POINT_TWO_TOKENS;
+      const betPriceA = POINT_EIGHT;
+      const betPriceB = POINT_TWO;
       const contractAmount = 10;
       await bets.connect(addresses[7]).createBetB(betPriceA, contractAmount);
       const betsIndex = await bets.betCounter();
       await bets.connect(addresses[6]).takeBet(betsIndex);
       const bet = await bets.bets(betsIndex);
 
-      const totalAmountTransferred = betPriceA.mul(contractAmount).add(betPriceB.mul(contractAmount));
+      const totalAmountTransferred = POINT_ONE_TOKEN.mul(betPriceA.mul(contractAmount).add(betPriceB.mul(contractAmount)));
       const fee = await bets.executionFee();
       const feeAmount = totalAmountTransferred.mul(fee).div(10000);
       const feeAdjustedAmountTransferred = totalAmountTransferred.sub(feeAmount);
@@ -403,7 +405,7 @@ describe.only("Bets", () => {
       ).withArgs(
         bet.accountB, 
         bet.accountA,
-        ONE_TOKEN.sub(bet.betPrice),  
+        ONE.sub(bet.betPrice),  
         bet.betPrice,
         bet.contractAmount
       );
@@ -412,7 +414,7 @@ describe.only("Bets", () => {
     it("Reverts when the loser tries to execute the order", async () => {
       const requestId:any = await requestGame();
       await changeOracleData(2, 1, requestId);
-      const betPriceA = POINT_EIGHT_TOKENS;
+      const betPriceA = POINT_EIGHT;
       const contractAmount = 10;
       await bets.connect(addresses[6]).createBetA(betPriceA, contractAmount);
       const betsIndex = await bets.betCounter();
@@ -427,16 +429,16 @@ describe.only("Bets", () => {
     it("Refunds stakes when the match results is a draw", async () => {
       const requestId:any = await requestGame();
       await changeOracleData(2, 2, requestId);
-      const betPriceA = POINT_EIGHT_TOKENS;
-      const betPriceB = POINT_TWO_TOKENS;
+      const betPriceA = POINT_EIGHT;
+      const betPriceB = POINT_TWO;
       const contractAmount = 10;
       await bets.connect(addresses[6]).createBetA(betPriceA, contractAmount);
       const betsIndex = await bets.betCounter();
       await bets.connect(addresses[7]).takeBet(betsIndex);
       const bet = await bets.bets(betsIndex);
-      const totalAmountA = bet.betPrice.mul(bet.contractAmount);
-      const betPriceBUsingStruct = ONE_TOKEN.sub(bet.betPrice);
-      const totalAmountB = betPriceBUsingStruct.mul(bet.contractAmount);
+      const totalAmountA = POINT_ONE_TOKEN.mul(bet.betPrice.mul(bet.contractAmount));
+      const betPriceBUsingStruct = ONE.sub(bet.betPrice);
+      const totalAmountB = POINT_ONE_TOKEN.mul(betPriceBUsingStruct.mul(bet.contractAmount));
       const executeWinner = await bets.connect(addresses[7]).executeBet(
         requestId, 
         0,

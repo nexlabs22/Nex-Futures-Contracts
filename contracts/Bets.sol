@@ -16,7 +16,10 @@ contract Bets is ReentrancyGuard, GameOracle {
     address public usdc;
     address public owner;
     address public admin;
+
+    uint16 public constant ONE = 10;
     uint16 public executionFee = 10; //=> 10/10000 = 0.1%
+    
     Counters.Counter public betCounter;
     uint256 constant ONE_TOKEN = 10**18;
 
@@ -26,8 +29,8 @@ contract Bets is ReentrancyGuard, GameOracle {
     struct Bet {
         address accountA; 
         address accountB; 
-        uint256 betPrice;
-        uint256 contractAmount;
+        uint128 betPrice; //1 storage slot //run gas estimation for each function
+        uint128 contractAmount;
     }
 
     event FeeTransferred(
@@ -89,7 +92,7 @@ contract Bets is ReentrancyGuard, GameOracle {
         address indexed winner,
         address indexed loser,
         uint256 betPriceWinner,
-        uint256 BetPriceLoser,
+        uint256 betPriceLoser,
         uint256 contractAmount
     );
 
@@ -162,8 +165,8 @@ contract Bets is ReentrancyGuard, GameOracle {
 
             bets[_betIndex] = filledBet;
 
-            uint256 betPriceB = ONE_TOKEN.sub(bet.betPrice);
-            uint256 complimentaryStake = betPriceB.mul(bet.contractAmount);
+            uint256 betPriceB = ONE - bet.betPrice;
+            uint256 complimentaryStake = betPriceB.mul(bet.contractAmount).mul(10**17);
             depositStake(complimentaryStake);
 
             emit BetTaken(
@@ -187,8 +190,8 @@ contract Bets is ReentrancyGuard, GameOracle {
 
             bets[_betIndex] = filledBet;
 
-            uint256 betPriceB = ONE_TOKEN.sub(bet.betPrice);
-            uint256 complimentaryStake = betPriceB.mul(bet.contractAmount);
+            uint256 betPriceB = ONE - bet.betPrice;
+            uint256 complimentaryStake = betPriceB.mul(bet.contractAmount).mul(10**17);
 
             depositStake(complimentaryStake);
 
@@ -242,8 +245,8 @@ contract Bets is ReentrancyGuard, GameOracle {
      * @param _contractAmount the amount of bet contracts set by the user
      */
     function _createBetA(
-        uint256 _betPrice, 
-        uint256 _contractAmount
+        uint128 _betPrice, 
+        uint128 _contractAmount
         ) internal {
 
         Bet memory bet = Bet(
@@ -258,11 +261,11 @@ contract Bets is ReentrancyGuard, GameOracle {
 
         bets[_betIndex] = bet;
 
-        uint256 _stakedAmount = bet.betPrice * bet.contractAmount;
+        uint256 _stakedAmount = bet.betPrice * bet.contractAmount * 10**17;
 
         depositStake(_stakedAmount);
 
-        uint256 _betPriceB = ONE_TOKEN.sub(bet.betPrice);
+        uint256 _betPriceB = ONE - bet.betPrice;
 
         emit BetACreated(
             msg.sender,
@@ -279,14 +282,14 @@ contract Bets is ReentrancyGuard, GameOracle {
      * @param _contractAmount the amount of bet contracts set by the user.
      */
     function _createBetB(
-        uint256 _betPrice, 
-        uint256 _contractAmount
+        uint128 _betPrice, 
+        uint128 _contractAmount
         ) internal {
 
         Bet memory bet = Bet(
             address(0),
             msg.sender,
-            ONE_TOKEN.sub(_betPrice),
+            (ONE - _betPrice),
             _contractAmount
         );
 
@@ -295,7 +298,7 @@ contract Bets is ReentrancyGuard, GameOracle {
 
         bets[_betIndex] = bet;
 
-        uint256 _stakedAmount = bet.betPrice * bet.contractAmount;
+        uint256 _stakedAmount = bet.betPrice * bet.contractAmount * 10**17;
 
         depositStake(_stakedAmount);
 
@@ -358,7 +361,7 @@ contract Bets is ReentrancyGuard, GameOracle {
         if (beforeGame) {
             if (betMatch) {
                 delete bets[_betIndex];
-                _createBetB(ONE_TOKEN.sub(bet.betPrice), bet.contractAmount);
+                _createBetB((ONE -bet.betPrice), bet.contractAmount);
                 transferStake(msg.sender, _stakedAmount);
 
             } else if (noMatch) {
@@ -411,7 +414,7 @@ contract Bets is ReentrancyGuard, GameOracle {
         if (beforeGame) {
             if (betMatch) {
                 delete bets[_betIndex];
-                _createBetA((ONE_TOKEN.sub(bet.betPrice)), bet.contractAmount);
+                _createBetA((ONE -bet.betPrice), bet.contractAmount);
                 transferStake(msg.sender, _stakedAmount);
             } else if (noMatch) {
                 delete bets[_betIndex];
@@ -424,7 +427,7 @@ contract Bets is ReentrancyGuard, GameOracle {
         emit BetCanceled(
             msg.sender,
             _betIndex,
-            ONE_TOKEN.sub(bet.betPrice),
+            (ONE -bet.betPrice),
             bet.contractAmount
         );
     }
@@ -461,7 +464,7 @@ contract Bets is ReentrancyGuard, GameOracle {
                 bet.accountA,
                 bet.accountB,
                 bet.betPrice,
-                ONE_TOKEN.sub(bet.betPrice),
+                (ONE -bet.betPrice),
                 bet.contractAmount
             );
         } else if (game.awayScore > game.homeScore) {
@@ -472,15 +475,15 @@ contract Bets is ReentrancyGuard, GameOracle {
             emit BetExecuted(
                 bet.accountB,
                 bet.accountA,
-                ONE_TOKEN.sub(bet.betPrice),
+                (ONE -bet.betPrice),
                 bet.betPrice,
                 bet.contractAmount
             );
 
         } else {
             returnFunds(bet.accountA, bet.accountB, 
-            (uint256(bet.betPrice).mul(bet.contractAmount)), 
-            (uint256(ONE_TOKEN.sub(bet.betPrice)).mul(bet.contractAmount)));
+            (uint256(bet.betPrice).mul(10**17).mul(bet.contractAmount)), 
+            (uint256(ONE_TOKEN.sub(uint256(bet.betPrice).mul(10**17))).mul(bet.contractAmount)));
         }
 
         delete bets[_betIndex];
@@ -493,8 +496,8 @@ contract Bets is ReentrancyGuard, GameOracle {
      * @param _contractAmount the amount of bet contracts set by the user
      */
     function createBetA(        
-        uint256 _betPrice, 
-        uint256 _contractAmount
+        uint128 _betPrice, 
+        uint128 _contractAmount
         ) external nonReentrant {
         _createBetA(_betPrice, _contractAmount);
     }
@@ -505,8 +508,8 @@ contract Bets is ReentrancyGuard, GameOracle {
      * @param _contractAmount the amount of bet contracts set by the user
      */
     function createBetB(        
-        uint256 _betPrice, 
-        uint256 _contractAmount
+        uint128 _betPrice, 
+        uint128 _contractAmount
         ) external nonReentrant {
         _createBetB(_betPrice, _contractAmount);
     }
