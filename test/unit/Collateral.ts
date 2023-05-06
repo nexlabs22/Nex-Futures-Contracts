@@ -3,10 +3,10 @@ import { BigNumber, Contract, Signer } from "ethers";
 import chai, { should } from "chai";
 import { solidity } from "ethereum-waffle";
 import { getAddress } from "@ethersproject/address";
-import { Collateral } from "../typechain/Collateral";
-import { CollateralFactory } from "../typechain/CollateralFactory";
-import { Token } from "../typechain/Token";
-import { TokenFactory } from "../typechain/TokenFactory";
+import { Collateral } from "../../typechain/Collateral";
+import { CollateralFactory } from "../../typechain/CollateralFactory";
+import { Token } from "../../typechain/Token";
+import { TokenFactory } from "../../typechain/TokenFactory";
 
 chai.use(solidity);
 

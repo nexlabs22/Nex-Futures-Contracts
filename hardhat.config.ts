@@ -5,6 +5,7 @@ import { ethers } from "hardhat";
 require('dotenv').config();
 require("@nomiclabs/hardhat-waffle");
 require("@nomiclabs/hardhat-etherscan");
+import "hardhat-gas-reporter";
 
 // This is a sample Hardhat task. To learn how to create your own go to
 // https://hardhat.org/guides/create-task.html
@@ -85,5 +86,11 @@ task("accounts", "Prints the list of accounts", async (taskArgs, hre) => {
         arbitrumOne: process.env.ARBISCAN_API_KEY,
         polygon: process.env.POLYGONSCAN_API_KEY,
     }
+  },
+  gasReporter: {
+    currency: 'EUR',
+    gasPrice: '62',
+    token: 'ETH',
+    excludeContracts: ['MockGameOracle', 'LinkToken', 'linkBasicToken']
   }
 };

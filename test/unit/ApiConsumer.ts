@@ -4,7 +4,7 @@ import { BigNumber, ContractReceipt, ContractTransaction, Signer } from "ethers"
 // import { network, deployments, ethers, run } from "hardhat"
 import { network, ethers, run } from "hardhat"
 // import { developmentChains } from "../../helper-hardhat-config"
-import { ApiConsumer, ApiConsumerFactory, LinkToken, LinkTokenFactory, MockOracle, MockOracleFactory } from "../typechain"
+import { ApiConsumer, ApiConsumerFactory, LinkToken, LinkTokenFactory, MockOracle, MockOracleFactory } from "../../typechain"
 
 describe("APIConsumer Unit Tests", async function () {
       let apiConsumer: ApiConsumer

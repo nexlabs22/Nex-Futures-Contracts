@@ -3,11 +3,11 @@ import { BigNumber, Contract, ContractReceipt, ContractTransaction, Signer } fro
 import chai, { should, assert } from "chai";
 import { solidity } from "ethereum-waffle";
 import { getAddress } from "@ethersproject/address";
-import { Bets } from "../typechain/Bets";
-import { BetsFactory } from "../typechain/BetsFactory";
-import { Token } from "../typechain/Token";
-import { TokenFactory } from "../typechain/TokenFactory";
-import { GameOracle, LinkToken, LinkTokenFactory, MockGameOracle, MockGameOracleFactory } from "../typechain";
+import { Bets } from "../../typechain/Bets";
+import { BetsFactory } from "../../typechain/BetsFactory";
+import { Token } from "../../typechain/Token";
+import { TokenFactory } from "../../typechain/TokenFactory";
+import { GameOracle, LinkToken, LinkTokenFactory, MockGameOracle, MockGameOracleFactory } from "../../typechain";
 import { numToBytes32 } from "@chainlink/test-helpers/dist/src/helpers";
 
 chai.use(solidity);

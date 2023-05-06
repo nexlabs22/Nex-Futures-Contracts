@@ -24,12 +24,11 @@ contract Bets is ReentrancyGuard, GameOracle {
     uint256 constant ONE_TOKEN = 10**18;
 
     mapping(uint256 => Bet) public bets;
-    mapping(address => uint256) public betsIndex;
 
     struct Bet {
         address accountA; 
         address accountB; 
-        uint128 betPrice; //1 storage slot //run gas estimation for each function
+        uint128 betPrice;
         uint128 contractAmount;
     }
 
@@ -161,8 +160,6 @@ contract Bets is ReentrancyGuard, GameOracle {
                 bet.contractAmount
             );
 
-            betsIndex[msg.sender] += 1;
-
             bets[_betIndex] = filledBet;
 
             uint256 betPriceB = ONE - bet.betPrice;
@@ -185,8 +182,6 @@ contract Bets is ReentrancyGuard, GameOracle {
                 bet.betPrice,
                 bet.contractAmount
             );
-
-            betsIndex[msg.sender] += 1;
 
             bets[_betIndex] = filledBet;
 
@@ -258,7 +253,7 @@ contract Bets is ReentrancyGuard, GameOracle {
 
         betCounter.increment();
         uint256 _betIndex = betCounter.current();
-
+        
         bets[_betIndex] = bet;
 
         uint256 _stakedAmount = bet.betPrice * bet.contractAmount * 10**17;
@@ -361,7 +356,7 @@ contract Bets is ReentrancyGuard, GameOracle {
         if (beforeGame) {
             if (betMatch) {
                 delete bets[_betIndex];
-                _createBetB((ONE -bet.betPrice), bet.contractAmount);
+                _createBetB((ONE - bet.betPrice), bet.contractAmount);
                 transferStake(msg.sender, _stakedAmount);
 
             } else if (noMatch) {
@@ -379,8 +374,6 @@ contract Bets is ReentrancyGuard, GameOracle {
             bet.contractAmount
         );
     }
-
-    
 
     /**
      * @notice Allows users to cancel side B orders
@@ -414,7 +407,7 @@ contract Bets is ReentrancyGuard, GameOracle {
         if (beforeGame) {
             if (betMatch) {
                 delete bets[_betIndex];
-                _createBetA((ONE -bet.betPrice), bet.contractAmount);
+                _createBetA((ONE - bet.betPrice), bet.contractAmount);
                 transferStake(msg.sender, _stakedAmount);
             } else if (noMatch) {
                 delete bets[_betIndex];
@@ -427,7 +420,7 @@ contract Bets is ReentrancyGuard, GameOracle {
         emit BetCanceled(
             msg.sender,
             _betIndex,
-            (ONE -bet.betPrice),
+            (ONE - bet.betPrice),
             bet.contractAmount
         );
     }
@@ -464,7 +457,7 @@ contract Bets is ReentrancyGuard, GameOracle {
                 bet.accountA,
                 bet.accountB,
                 bet.betPrice,
-                (ONE -bet.betPrice),
+                (ONE - bet.betPrice),
                 bet.contractAmount
             );
         } else if (game.awayScore > game.homeScore) {
@@ -475,7 +468,7 @@ contract Bets is ReentrancyGuard, GameOracle {
             emit BetExecuted(
                 bet.accountB,
                 bet.accountA,
-                (ONE -bet.betPrice),
+                (ONE - bet.betPrice),
                 bet.betPrice,
                 bet.contractAmount
             );
