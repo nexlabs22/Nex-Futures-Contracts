@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.6.6;
+pragma solidity ^0.8.0;
 pragma experimental ABIEncoderV2;
-import "@chainlink/contracts/src/v0.6/LinkTokenReceiver.sol";
-import "@chainlink/contracts/src/v0.6/interfaces/ChainlinkRequestInterface.sol";
-import "@chainlink/contracts/src/v0.6/interfaces/LinkTokenInterface.sol";
-import "@chainlink/contracts/src/v0.6/vendor/SafeMathChainlink.sol";
+import "./libs/LinkTokenReceiver.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/ChainlinkRequestInterface.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/LinkTokenInterface.sol";
+import "./libs/SafeMathChainlink.sol";
 
 /**
  * @title The Chainlink Mock Oracle contract
@@ -75,7 +75,7 @@ contract MockGameOracle is ChainlinkRequestInterface, LinkTokenReceiver {
     bytes32 requestId = keccak256(abi.encodePacked(_sender, _nonce));
     require(commitments[requestId].callbackAddr == address(0), "Must use a unique ID");
     // solhint-disable-next-line not-rely-on-time
-    uint256 expiration = now.add(EXPIRY_TIME);
+    uint256 expiration = block.timestamp.add(EXPIRY_TIME);
 
     commitments[requestId] = Request(_callbackAddress, _callbackFunctionId);
 
@@ -98,10 +98,37 @@ contract MockGameOracle is ChainlinkRequestInterface, LinkTokenReceiver {
    * Will call the callback address' callback function without bubbling up error
    * checking in a `require` so that the node can get paid.
    * @param _requestId The fulfillment request ID that must match the requester's
+   * @param _data1 The data to return to the consuming contract
+   * @param _data2 The data to return to the consuming contract
+   */
+  function fulfillOracleScoreRequest(bytes32 _requestId, bytes32 _data1, bytes32 _data2)
+    external
+    isValidRequest(_requestId)
+    returns (bool)
+  {
+    Request memory req = commitments[_requestId];
+    delete commitments[_requestId];
+    require(gasleft() >= MINIMUM_CONSUMER_GAS_LIMIT, "Must provide consumer enough gas");
+    // All updates to the oracle's fulfillment should come before calling the
+    // callback(addr+functionId) as it is untrusted.
+    // See: https://solidity.readthedocs.io/en/develop/security-considerations.html#use-the-checks-effects-interactions-pattern
+    (bool success, ) = req.callbackAddr.call(
+      abi.encodeWithSelector(req.callbackFunctionId, _requestId, _data1, _data2)
+    ); // solhint-disable-line avoid-low-level-calls
+    return success;
+  }
+
+
+  /**
+   * @notice Called by the Chainlink node to fulfill requests
+   * @dev Given params must hash back to the commitment stored from `oracleRequest`.
+   * Will call the callback address' callback function without bubbling up error
+   * checking in a `require` so that the node can get paid.
+   * @param _requestId The fulfillment request ID that must match the requester's
    * @param _data The data to return to the consuming contract
    * @return Status if the external call was successful
    */
-  function fulfillOracleRequest(bytes32 _requestId, bytes[] calldata _data)
+  function fulfillOracleStatusRequest(bytes32 _requestId, string calldata _data)
     external
     isValidRequest(_requestId)
     returns (bool)
@@ -135,7 +162,7 @@ contract MockGameOracle is ChainlinkRequestInterface, LinkTokenReceiver {
   ) external override {
     require(commitments[_requestId].callbackAddr != address(0), "Must use a unique ID");
     // solhint-disable-next-line not-rely-on-time
-    require(_expiration <= now, "Request is not expired");
+    require(_expiration <= block.timestamp, "Request is not expired");
 
     delete commitments[_requestId];
     emit CancelOracleRequest(_requestId);

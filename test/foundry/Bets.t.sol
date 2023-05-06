@@ -3,17 +3,19 @@ pragma solidity >=0.6.2 <0.9.0;
 
 import "forge-std/Test.sol";
 import "../../contracts/Bets.sol";
+import "../../contracts/GameOracle.sol";
 import "../../contracts/Token.sol";
-// import "../../contracts/test/LinkToken.sol";
-// import "../../contracts/test/MockGameOracle.sol";
+import "../../contracts/test/LinkToken.sol";
+import "../../contracts/test/MockGameOracle.sol";
 
 
 contract BetsContract is Test {
 
     Bets public bets;
-    // LinkToken public link;
+    LinkToken public link;
     Token public usdc;
-    // MockGameOracle public oracle;
+    MockGameOracle public oracle;
+    GameOracle public game;
 
     address addr1 = vm.addr(1);
     address addr2 = vm.addr(2);
@@ -61,6 +63,7 @@ contract BetsContract is Test {
     );
 
     function setUp() public {
+
         usdc = new Token(10000000e18);
         usdc.transfer(addr1, 10000e18);
         usdc.transfer(addr2, 10000e18);
@@ -69,12 +72,12 @@ contract BetsContract is Test {
         usdc.transfer(addr5, 1000e18);
         usdc.transfer(admin, 1000e18);
 
-        // link = new LinkToken();
-        // oracle = MockGameOracle(address(link));
+        link = new LinkToken();
+        oracle = new MockGameOracle(address(link));
+        game = new GameOracle(address(link), address(oracle));
         bets = new Bets(
+            address(game),
             address(usdc),
-            address(addr4),
-            address(addr3),
             address(admin)
         );
 

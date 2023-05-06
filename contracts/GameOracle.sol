@@ -1,246 +1,146 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.17;
+// https://glink.solutions
+// Discord=https://discord.gg/a69JjGd3y6
+
+/**
+ * THIS IS AN EXAMPLE CONTRACT WHICH USES HARDCODED VALUES FOR CLARITY.
+ * THIS EXAMPLE USES UN-AUDITED CODE.
+ * DO NOT USE THIS CODE IN PRODUCTION.
+ */
+
+ // spolia link address = 0x779877A7B0D9E8603169DdbD7836e478b4624789
+ // spolia oracle address = 0x6c2e87340Ef6F3b7e21B2304D6C057091814f25E
+
+
+/**
+SHORT	LONG	                                    TYPE	
+TBD	  Time To Be Defined	                      Scheduled	
+NS	  Not Started	                              Scheduled	
+1H	  "First Half, Kick Off"	                  In Play	
+HT	  Halftime	                                In Play	
+2H	  "Second Half, 2nd Half Started"	          In Play	
+ET	  Extra Time	                              In Play	
+BT	  Break Time	                              In Play	
+P	    Penalty In Progress	                      In Play	
+SUSP	Match Suspended	                          In Play	
+INT	  Match Interrupted	                        In Play	
+FT	  Match Finished	                          Finished	
+AET	  Match Finished After Extra Time	          Finished	
+PEN	  Match Finished After Penalty	            Finished	
+PST	  Match Postponed	                          Postponed	
+CANC	Match Cancelled	                          Cancelled	
+ABD	  Match Abandoned	                          Abandoned	
+AWD	  Technical Loss	                          Not Played	
+WO	  WalkOver	                                Not Played	
+LIVE	In Progress	                              In Play	
+*/
+
+
+/**
+ team ids
+ [
+    {teamName: "Manchester City", teamId: 50},
+    {teamName: "Arsenal", teamId: 42},
+    {teamName: "Newcastle United", teamId: 34},
+    {teamName: "Manchester United", teamId: 33},
+    {teamName: "Liverpool", teamId: 40},
+    {teamName: "Tottenham", teamId: 47},
+    {teamName: "Aston Villa", teamId: 66},
+    {teamName: "Brighton", teamId: 51},
+    {teamName: "Brentford", teamId: 55},
+    {teamName: "Fulham", teamId: 36},
+    {teamName: "Crystal Palace", teamId: 52},
+    {teamName: "Chelsea", teamId: 49},
+    {teamName: "Bournemouth", teamId: 35 },
+    {teamName: "Wolves", teamId: 39},
+    {teamName: "West Ham", teamId: 48},
+    {teamName: "Leicester", teamId: 46},
+    {teamName: "Leeds", teamId: 63},
+    {teamName: "Nottingham Forest", teamId: 65},
+    {teamName: "Everton", teamId: 45},
+    {teamName: "Southampton", teamId: 41}
+]
+ */
+
+pragma solidity ^0.8.7;
 
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
+import "@chainlink/contracts/src/v0.8/ConfirmedOwner.sol";
 
-/**
+contract GameOracle is ChainlinkClient, ConfirmedOwner {
+  using Chainlink for Chainlink.Request;
 
-https://api-sports.io/documentation/football/v3#tag/Fixtures/operation/get-fixtures-rounds
+  string public baseAPIUrl = "https://app.nexlabs.io/api/footballH2H";
+  bytes32 private externalJobId;
+  bytes32 private externalJobIdString;
+  uint256 private oraclePayment;
 
- * Supported `sportId`
- * --------------------
- * NCAA Men's Football: 1
- * NFL: 2
- * MLB: 3
- * NBA: 4
- * NCAA Men's Basketball: 5
- * NHL: 6
- * MMA: 7
- * WNBA: 8
- * MLS: 10
- * EPL: 11
- * Ligue 1: 12
- * Bundesliga: 13
- * La Liga: 14
- * Serie A: 15
- * UEFA Champions League: 16
- */
 
-/**
- * Supported `market`
- * --------------------
- * create : Create Market
- * resolve : Resolve Market
- */
+  uint256 public homeScore;
+  uint256 public awayScore;
+  string public gameStatus;
 
-/**
- * Supported `statusIds`
- * --------------------
- * 1 : STATUS_CANCELED
- * 2 : STATUS_DELAYED
- * 3 : STATUS_END_OF_FIGHT
- * 4 : STATUS_END_OF_ROUND
- * 5 : STATUS_END_PERIOD
- * 6 : STATUS_FIGHTERS_INTRODUCTION
- * 7 : STATUS_FIGHTERS_WALKING
- * 8 : STATUS_FINAL
- * 9 : STATUS_FINAL_PEN
- * 10 : STATUS_FIRST_HALF
- * 11 : STATUS_FULL_TIME
- * 12 : STATUS_HALFTIME
- * 13 : STATUS_IN_PROGRESS
- * 14 : STATUS_IN_PROGRESS_2
- * 15 : STATUS_POSTPONED
- * 16 : STATUS_PRE_FIGHT
- * 17 : STATUS_RAIN_DELAY
- * 18 : STATUS_SCHEDULED
- * 19 : STATUS_SECOND_HALF
- * 20 : STATUS_TBD
- * 21 : STATUS_UNCONTESTED
- * 22 : STATUS_ABANDONED
- * 23 : STATUS_END_OF_EXTRATIME
- * 24 : STATUS_END_OF_REGULATION
- * 25 : STATUS_FORFEIT
- * 26 : STATUS_HALFTIME_ET
- * 27 : STATUS_OVERTIME
- * 28 : STATUS_SHOOTOUT
- */
+  constructor(address _linkAddress, address _oracleAddress) ConfirmedOwner(msg.sender){
+  setChainlinkToken(_linkAddress);
+  setChainlinkOracle(_oracleAddress);
+  externalJobId = "e35ba51d6ac14220b2e5554e5e1a97a5";
+  externalJobIdString = "59b95d44dae442d69f48d09a0ddabf6e";
+  oraclePayment = ((0 * LINK_DIVISIBILITY) / 10); // n * 10**18
+  }
 
-/**
- * @title A consumer contract for Therundown API.
- * @author LinkPool.
- * @dev Uses @chainlink/contracts 0.4.2.
- */
+  function requestGameScore(string memory _gameId)
+    public
+    onlyOwner
+    returns(bytes32)
+  {
+    Chainlink.Request memory req = buildChainlinkRequest(externalJobId, address(this), this.fulfillScores.selector);
+    req.add("get", concatenation(baseAPIUrl, _gameId));
+    req.add("path1", "response,0,goals,home");
+    req.add("path2", "response,0,goals,away");
+    req.addInt("times", 100);
+    return sendChainlinkRequestTo(chainlinkOracleAddress(), req, oraclePayment);
+  }
 
-contract GameOracle is ChainlinkClient {
-    using Chainlink for Chainlink.Request;
-    using CBORChainlink for BufferChainlink.buffer;
+  event RequestFulfilledGameStatusScores(bytes32 indexed requestId, uint256 indexed Value1, uint256 indexed Value2);
 
-    struct GameCreate {
-        bytes32 gameId;
-        uint256 startTime;
-        string homeTeam;
-        string awayTeam;
+  function fulfillScores(bytes32 requestId, uint256 _Value1, uint256 _Value2)
+    public
+    recordChainlinkFulfillment(requestId)
+  {
+    emit RequestFulfilledGameStatusScores(requestId, _Value1, _Value2);
+    homeScore = _Value1;
+    awayScore = _Value2;
+  }
+
+
+  function requestGameStatus(
+    string memory _gameId
+  )
+    public
+    returns(bytes32)
+  {
+    Chainlink.Request memory req = buildChainlinkRequest(externalJobIdString, address(this), this.fulfillGameStatus.selector);
+    req.add("get", concatenation(baseAPIUrl, _gameId));
+    req.add("path", "response,0,fixture,status,short");
+    return sendChainlinkRequestTo(chainlinkOracleAddress(), req, oraclePayment);
+  }
+
+  event RequestFulfilledGameStatus(bytes32 indexed requestId, string stringVariable);
+
+  function fulfillGameStatus(bytes32 requestId, string memory _stringVariable)
+    public
+    recordChainlinkFulfillment(requestId)
+  {
+    emit RequestFulfilledGameStatus(requestId, _stringVariable);
+    gameStatus = _stringVariable;
+  }
+
+  function compare(string memory str2) public view returns (bool) {
+        return keccak256(abi.encodePacked(gameStatus)) == keccak256(abi.encodePacked(str2));
+    }
+  
+  function concatenation(string memory a, string memory b) public pure returns (string memory) {
+        return string(bytes.concat(bytes(a), bytes(b)));
     }
 
-    struct GameResolve {
-        bytes32 gameId;
-        uint8 homeScore;
-        uint8 awayScore;
-        uint8 statusId;
-    }
-
-    mapping(bytes32 => bytes[]) public requestIdGames;
-
-    error FailedTransferLINK(address to, uint256 amount);
-
-    /* ========== CONSTRUCTOR ========== */
-
-    /**
-     * @param _link the LINK token address.
-     * @param _oracle the Operator.sol contract address.
-     */
-    constructor(address _link, address _oracle) {
-        setChainlinkToken(_link);
-        setChainlinkOracle(_oracle);
-    }
-
-    /* ========== EXTERNAL FUNCTIONS ========== */
-
-    function cancelRequest(
-        bytes32 _requestId,
-        uint256 _payment,
-        bytes4 _callbackFunctionId,
-        uint256 _expiration
-    ) external {
-        cancelChainlinkRequest(_requestId, _payment, _callbackFunctionId, _expiration);
-    }
-
-    function fulfillGames(bytes32 _requestId, bytes[] memory _games) external recordChainlinkFulfillment(_requestId) {
-        requestIdGames[_requestId] = _games;
-    }
-
-    /**
-     * @notice Returns an array of game data for a given market, sport ID, and date.
-     * @dev Result format is array of either encoded GameCreate tuples or encoded GameResolve tuples.
-     * @param _specId the jobID.
-     * @param _payment the LINK amount in Juels (i.e. 10^18 aka 1 LINK).
-     * @param _market the type of game data to be queried ("create" or "resolve").
-     * @param _sportId the ID of the sport to be queried (see supported sportId).
-     * @param _date the date for the games to be queried (format in epoch).
-     */
-    function requestGames(
-        bytes32 _specId,
-        uint256 _payment,
-        string calldata _market,
-        uint256 _sportId,
-        uint256 _date
-    ) external {
-        Chainlink.Request memory req = buildChainlinkRequest(_specId, address(this), this.fulfillGames.selector);
-
-        req.addUint("date", _date);
-        req.add("market", _market);
-        req.addUint("sportId", _sportId);
-
-        sendChainlinkRequestTo(chainlinkOracleAddress(), req, _payment);
-    }
-
-    /**
-     * @notice Returns an Array of game data for a given market, sport ID, date and other filters.
-     * @dev Result format is array of either encoded GameCreate tuples or encoded GameResolve tuples.
-     * @dev "gameIds" is optional.
-     * @dev "statusIds" is optional, and ignored for market "create".
-     * @param _specId the jobID.
-     * @param _payment the LINK amount in Juels (i.e. 10^18 aka 1 LINK).
-     * @param _market the type of game data to be queried ("create" or "resolve").
-     * @param _sportId the ID of the sport to be queried (see supported sportId).
-     * @param _date the date for the games to be queried (format in epoch).
-     * @param _gameIds the IDs of the games to be queried (array of game ID as its string representation, e.g.
-     * ["23660869053591173981da79133fe4c2", "fb78cede8c9aa942b2569b048e649a3f"]).
-     * @param _statusIds the IDs of the statuses to be queried (an array of statusId, e.g. ["1","2","3"],
-     * see supported statusIds).
-     */
-    function requestGamesFiltering(
-        bytes32 _specId,
-        uint256 _payment,
-        string calldata _market,
-        uint256 _sportId,
-        uint256 _date,
-        bytes32[] memory _gameIds,
-        uint256[] memory _statusIds
-    ) external {
-        Chainlink.Request memory req = buildOperatorRequest(_specId, this.fulfillGames.selector);
-
-        req.add("market", _market);
-        req.addUint("sportId", _sportId);
-        req.addUint("date", _date);
-        req.addStringArray("gameIds", _bytes32ArrayToString(_gameIds)); // NB: optional filter
-        _addUintArray(req, "statusIds", _statusIds); // NB: optional filter, ignored for market "create".
-
-        sendOperatorRequest(req, _payment);
-    }
-
-    function setOracle(address _oracle) external {
-        setChainlinkOracle(_oracle);
-    }
-
-    function withdrawLink(address payable _payee, uint256 _amount) external {
-        LinkTokenInterface linkToken = LinkTokenInterface(chainlinkTokenAddress());
-        if (!linkToken.transfer(_payee, _amount)) {
-            revert FailedTransferLINK(_payee, _amount);
-        }
-    }
-
-    /* ========== EXTERNAL VIEW FUNCTIONS ========== */
-
-    function getGamesCreated(bytes32 _requestId, uint256 _idx) external view returns (GameCreate memory) {
-        GameCreate memory game = abi.decode(requestIdGames[_requestId][_idx], (GameCreate));
-        return game;
-    }
-
-    function getGamesResolved(bytes32 _requestId, uint256 _idx) external view returns (GameResolve memory) {
-        GameResolve memory game = abi.decode(requestIdGames[_requestId][_idx], (GameResolve));
-        return game;
-    }
-
-    function getOracleAddress() external view returns (address) {
-        return chainlinkOracleAddress();
-    }
-
-    /* ========== PRIVATE PURE FUNCTIONS ========== */
-
-    function _addUintArray(
-        Chainlink.Request memory _req,
-        string memory _key,
-        uint256[] memory _values
-    ) private pure {
-        Chainlink.Request memory r2 = _req;
-        r2.buf.encodeString(_key);
-        r2.buf.startArray();
-        uint256 valuesLength = _values.length;
-        for (uint256 i = 0; i < valuesLength; ) {
-            r2.buf.encodeUInt(_values[i]);
-            unchecked {
-                ++i;
-            }
-        }
-        r2.buf.endSequence();
-        _req = r2;
-    }
-
-    function _bytes32ArrayToString(bytes32[] memory _bytes32Array) private pure returns (string[] memory) {
-        string[] memory gameIds = new string[](_bytes32Array.length);
-        for (uint256 i = 0; i < _bytes32Array.length; i++) {
-            gameIds[i] = _bytes32ToString(_bytes32Array[i]);
-        }
-        return gameIds;
-    }
-
-    function _bytes32ToString(bytes32 _bytes32) private pure returns (string memory) {
-        bytes memory bytesArray = new bytes(32);
-        for (uint256 i; i < 32; i++) {
-            bytesArray[i] = _bytes32[i];
-        }
-        return string(bytesArray);
-    }
 }
