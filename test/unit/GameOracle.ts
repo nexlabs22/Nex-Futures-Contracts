@@ -1,4 +1,4 @@
-import { numToBytes32 } from "@chainlink/test-helpers/dist/src/helpers"
+import { numToBytes32, stringToBytes, toBytes32String } from "@chainlink/test-helpers/dist/src/helpers"
 import { assert, expect } from "chai"
 import { BigNumber, ContractReceipt, ContractTransaction, Signer } from "ethers"
 // import { network, deployments, ethers, run } from "hardhat"
@@ -22,16 +22,17 @@ describe("GameOracle Unit Tests", async function () {
       
 
 
-      async function requestGame() {
+      async function requestGameScore() {
+        const transaction: ContractTransaction = await gameOracle.requestGameScore("");
+        const transactionReceipt: ContractReceipt = await transaction.wait(1);
+        if (!transactionReceipt.events) return
+        const requestId: string = transactionReceipt.events[0].topics[1];
+        return requestId;
+      }
+
+      async function requestGameStatus() {
         const date = new Date();
-        const transaction: ContractTransaction = await gameOracle.requestGames(
-            jobId, //specId
-            fee,   //payment
-            market,//market
-            sprotId,//sportId
-            date.getTime(),//date
-            {gasLimit:1000000}
-        );
+        const transaction: ContractTransaction = await gameOracle.requestGameStatus("");
         const transactionReceipt: ContractReceipt = await transaction.wait(1);
         if (!transactionReceipt.events) return
         const requestId: string = transactionReceipt.events[0].topics[1];
@@ -39,10 +40,13 @@ describe("GameOracle Unit Tests", async function () {
       }
 
 
-      async function changeOracleData(homeScore:number, awayScore:number, requestId:string) {
+      async function changeOracleScoreData(homeScore:number, awayScore:number, requestId:string) {
+        await mockGameOracle.fulfillOracleScoreRequest(requestId, numToBytes32(homeScore), numToBytes32(awayScore));
+      }
+
+      async function changeOracleStatusData(status:string, requestId:string) {
         const abiCoder = new ethers.utils.AbiCoder;
-        let data = abiCoder.encode([ "bytes32", "uint8", "uint8", "uint8" ], [numToBytes32(gameId), homeScore.toString(), awayScore.toString(), "1"]);
-        await mockGameOracle.fulfillOracleRequest(requestId, [data]);
+        await mockGameOracle.fulfillOracleStatusRequest(requestId, (status));
       }
 
 
@@ -76,40 +80,32 @@ describe("GameOracle Unit Tests", async function () {
       
       it("Should successfully make a request and get a result", async () => {
         const date = new Date();
-        const transaction: ContractTransaction = await gameOracle.requestGames(
-            jobId, //specId
-            fee,   //payment
-            market,//market
-            sprotId,//sportId
-            date.getTime(),//date
-            {gasLimit:1000000}
-        );
+        const transaction: ContractTransaction = await gameOracle.requestGameScore("");
         
         const transactionReceipt: ContractReceipt = await transaction.wait(1);
         if (!transactionReceipt.events) return
         const requestId: string = transactionReceipt.events[0].topics[1]
-        const abiCoder = new ethers.utils.AbiCoder;
-        let data = abiCoder.encode([ "bytes32", "uint8", "uint8", "uint8" ], [numToBytes32(gameId), "1", "2", "1"]);
-        await mockGameOracle.fulfillOracleRequest(requestId, [data])
-        const volume = await gameOracle.getGamesResolved(requestId, 0)
-        assert.equal(Number(volume.gameId), gameId);
-        assert.equal(Number(volume.homeScore), 1);
-        assert.equal(Number(volume.awayScore), 2);
-        assert.equal(Number(volume.statusId), Number(sprotId));
+        // const abiCoder = new ethers.utils.AbiCoder;
+        // let data = abiCoder.encode([ "bytes32", "uint8", "uint8", "uint8" ], [numToBytes32(gameId), "1", "2", "1"]);
+        await mockGameOracle.fulfillOracleScoreRequest(requestId, numToBytes32(1), numToBytes32(2));
+        // const volume = await gameOracle.getGamesResolved(requestId, 0)
+        assert.equal(Number(await gameOracle.homeScore()), 1);
+        assert.equal(Number(await gameOracle.awayScore()), 2);
+        
       });
 
       
       it("request with functions", async () => {
         //request data
-        const requestId:any = await requestGame();
+        const scoreRequestId:any = await requestGameScore();
+        const statusRequestId:any = await requestGameStatus();
         //set oracle data
-        await changeOracleData(1, 2, requestId);
+        await changeOracleScoreData(1, 2, scoreRequestId);
+        await changeOracleStatusData("FT", statusRequestId);
         //get oracle data
-        const volume = await gameOracle.getGamesResolved(requestId, 0)
-        assert.equal(Number(volume.gameId), gameId);
-        assert.equal(Number(volume.homeScore), 1);
-        assert.equal(Number(volume.awayScore), 2);
-        assert.equal(Number(volume.statusId), Number(sprotId));
+        assert.equal(Number(await gameOracle.homeScore()), 1);
+        assert.equal(Number(await gameOracle.awayScore()), 2);
+        assert.equal(await gameOracle.gameStatus(), "FT");
       });
       
     })

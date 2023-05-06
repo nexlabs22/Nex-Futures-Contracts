@@ -8,10 +8,12 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.
 import {GameOracle} from "./GameOracle.sol";
 import {Counters} from "@openzeppelin/contracts/utils/Counters.sol";
 
-contract Bets is ReentrancyGuard, GameOracle {
+contract Bets is ReentrancyGuard {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     using Counters for Counters.Counter;
+
+    GameOracle public game;
 
     address public usdc;
     address public owner;
@@ -106,15 +108,60 @@ contract Bets is ReentrancyGuard, GameOracle {
     }
 
     constructor(
+        address _gameOracleAddress,
         address _usdc,
-        address _link,
-        address _oracle,
         address _admin
-    ) GameOracle(_link, _oracle) {
+    ) {
+        game = GameOracle(_gameOracleAddress);
         usdc = _usdc;
         admin = _admin;
         owner = msg.sender;
     }
+
+    /**
+     * @notice change game oracle address by admin.
+     * @param _gameOracleAddress the new game oracle address.
+     */
+     function setGameOracle(address _gameOracleAddress) public onlyAdmin {
+        game = GameOracle(_gameOracleAddress);
+     }
+
+    /**
+     * @notice check that match is started or not
+     */
+     function isMatchStarted() public view returns(bool){
+        if(
+            game.compare("TBD") ||  //Time To Be Defined
+            game.compare("NS") ||   //Not Started	  
+            game.compare("PST") ||  //Match Postponed
+            game.compare("CANC") || //Match Cancelled	
+            game.compare("ABD") ||  //Match Abandoned	
+            game.compare("AWD") ||  //Technical Loss
+            game.compare("WO") ||   //WalkOver
+            game.compare("")        // no data
+
+        ){
+            return false;
+        } else {
+            return true;
+        }
+     }
+
+
+     /**
+     * @notice check that match is finished or not
+     */
+     function isMatchFinished() public view returns(bool){
+        if(
+            game.compare("FT") ||  //Match Finished	
+            game.compare("AET") ||   //Match Finished After Extra Time	  
+            game.compare("PEN")  //Match Finished After Penalty
+        ){
+            return true;
+        } else {
+            return false;
+        }
+     }
 
     /**
      * @notice deposits the stake determined by the user.
@@ -326,13 +373,10 @@ contract Bets is ReentrancyGuard, GameOracle {
 
     /**
      * @notice Allows users to cancel side A orders
-     * @param _requestId the requestId returned by requestGame function
-     * @param _idx match Id returned by requestGame function 
      * @param _betIndex the index of the order for the _betIndex chosen by the user.
      */
+     
     function cancelBetA(
-        bytes32 _requestId,
-        uint256 _idx,
         uint256 _betIndex
     ) external nonReentrant {
         require(
@@ -340,8 +384,6 @@ contract Bets is ReentrancyGuard, GameOracle {
             || _betIndex != 0, 
             "Order does not exist");
 
-        GameResolve memory game = getGameResult(_requestId, _idx);
-        uint256 _statusId = game.statusId;
 
         Bet memory bet = bets[_betIndex];
 
@@ -349,7 +391,7 @@ contract Bets is ReentrancyGuard, GameOracle {
 
         uint256 _stakedAmount = bet.betPrice * bet.contractAmount;
 
-        bool beforeGame = _statusId == 10 || _statusId == 13;
+        bool beforeGame = !isMatchStarted();
         bool betMatch = bet.accountA != address(0) && bet.accountB != address(0);
         bool noMatch = bet.accountB == address(0);
 
@@ -377,13 +419,9 @@ contract Bets is ReentrancyGuard, GameOracle {
 
     /**
      * @notice Allows users to cancel side B orders
-     * @param _requestId the requestId returned by requestGame function
-     * @param _idx match Id returned by requestGame function 
      * @param _betIndex the index of the order for the _betIndex chosen by the user.
      */
     function cancelBetB(
-        bytes32 _requestId,
-        uint256 _idx,
         uint256 _betIndex
     ) external nonReentrant {
         require(
@@ -391,8 +429,6 @@ contract Bets is ReentrancyGuard, GameOracle {
             || _betIndex != 0, 
             "Order does not exist");
 
-        GameResolve memory game = getGameResult(_requestId, _idx);
-        uint256 _statusId = game.statusId;
 
         Bet memory bet = bets[_betIndex];
 
@@ -400,7 +436,7 @@ contract Bets is ReentrancyGuard, GameOracle {
 
         uint256 _stakedAmount = bet.betPrice * bet.contractAmount;
 
-        bool beforeGame = _statusId == 10 || _statusId == 13;
+        bool beforeGame = !isMatchStarted();
         bool betMatch = bet.accountA != address(0) && bet.accountB != address(0);
         bool noMatch = bet.accountA == address(0);
 
@@ -424,23 +460,19 @@ contract Bets is ReentrancyGuard, GameOracle {
             bet.contractAmount
         );
     }
-
-
+    
     /**
      * @notice Executes the winning order/bet
-     * @param _requestId the requestId returned by requestGame function
-     * @param _idx match Id returned by requestGame function 
      * @param _betIndex the index of the bet that will be executed
      */
     function executeBet(  
-        bytes32 _requestId, 
-        uint256 _idx,
         uint256 _betIndex
         ) external nonReentrant {
 
         require(_betIndex != 0, "Order does not exist");
         
-        GameResolve memory game = getGameResult(_requestId, _idx);
+        uint homeScore = game.homeScore();
+        uint awayScore = game.awayScore();
 
         Bet memory bet = bets[_betIndex];
 
@@ -448,7 +480,7 @@ contract Bets is ReentrancyGuard, GameOracle {
 
         uint256 _totalStake = bet.contractAmount * ONE_TOKEN;
 
-        if (game.homeScore > game.awayScore) {
+        if (homeScore > awayScore) {
             require(msg.sender == bet.accountA, "You are not the winner");
             uint256 _feeAdjustedStake = _totalStake - sendFeeToOwner(_totalStake);
             transferStake(bet.accountA, _feeAdjustedStake);
@@ -460,7 +492,7 @@ contract Bets is ReentrancyGuard, GameOracle {
                 (ONE - bet.betPrice),
                 bet.contractAmount
             );
-        } else if (game.awayScore > game.homeScore) {
+        } else if (awayScore > homeScore) {
             require(msg.sender == bet.accountB, "You are not the winner");
             uint256 _feeAdjustedStake = _totalStake - sendFeeToOwner(_totalStake);
             transferStake(bet.accountB, _feeAdjustedStake);
@@ -519,9 +551,6 @@ contract Bets is ReentrancyGuard, GameOracle {
         uint8 statusId;
         }
      */
-    function getGameResult(bytes32 _requestId, uint256 _idx)  public view returns (GameResolve memory) {
-        GameResolve memory game = abi.decode(requestIdGames[_requestId][_idx], (GameResolve));
-        return game;
-    }
+    
 
 }
