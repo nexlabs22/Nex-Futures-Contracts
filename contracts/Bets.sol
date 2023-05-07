@@ -26,12 +26,11 @@ contract Bets is ReentrancyGuard {
     uint256 constant ONE_TOKEN = 10**18;
 
     mapping(uint256 => Bet) public bets;
-    mapping(address => uint256) public betsIndex;
 
     struct Bet {
         address accountA; 
         address accountB; 
-        uint128 betPrice; //1 storage slot //run gas estimation for each function
+        uint128 betPrice;
         uint128 contractAmount;
     }
 
@@ -208,8 +207,6 @@ contract Bets is ReentrancyGuard {
                 bet.contractAmount
             );
 
-            betsIndex[msg.sender] += 1;
-
             bets[_betIndex] = filledBet;
 
             uint256 betPriceB = ONE - bet.betPrice;
@@ -232,8 +229,6 @@ contract Bets is ReentrancyGuard {
                 bet.betPrice,
                 bet.contractAmount
             );
-
-            betsIndex[msg.sender] += 1;
 
             bets[_betIndex] = filledBet;
 
@@ -305,7 +300,7 @@ contract Bets is ReentrancyGuard {
 
         betCounter.increment();
         uint256 _betIndex = betCounter.current();
-
+        
         bets[_betIndex] = bet;
 
         uint256 _stakedAmount = bet.betPrice * bet.contractAmount * 10**17;
@@ -403,7 +398,7 @@ contract Bets is ReentrancyGuard {
         if (beforeGame) {
             if (betMatch) {
                 delete bets[_betIndex];
-                _createBetB((ONE -bet.betPrice), bet.contractAmount);
+                _createBetB((ONE - bet.betPrice), bet.contractAmount);
                 transferStake(msg.sender, _stakedAmount);
 
             } else if (noMatch) {
@@ -421,8 +416,6 @@ contract Bets is ReentrancyGuard {
             bet.contractAmount
         );
     }
-    
-    
 
     /**
      * @notice Allows users to cancel side B orders
@@ -450,7 +443,7 @@ contract Bets is ReentrancyGuard {
         if (beforeGame) {
             if (betMatch) {
                 delete bets[_betIndex];
-                _createBetA((ONE -bet.betPrice), bet.contractAmount);
+                _createBetA((ONE - bet.betPrice), bet.contractAmount);
                 transferStake(msg.sender, _stakedAmount);
             } else if (noMatch) {
                 delete bets[_betIndex];
@@ -463,7 +456,7 @@ contract Bets is ReentrancyGuard {
         emit BetCanceled(
             msg.sender,
             _betIndex,
-            (ONE -bet.betPrice),
+            (ONE - bet.betPrice),
             bet.contractAmount
         );
     }
@@ -496,7 +489,7 @@ contract Bets is ReentrancyGuard {
                 bet.accountA,
                 bet.accountB,
                 bet.betPrice,
-                (ONE -bet.betPrice),
+                (ONE - bet.betPrice),
                 bet.contractAmount
             );
         } else if (awayScore > homeScore) {
@@ -507,7 +500,7 @@ contract Bets is ReentrancyGuard {
             emit BetExecuted(
                 bet.accountB,
                 bet.accountA,
-                (ONE -bet.betPrice),
+                (ONE - bet.betPrice),
                 bet.betPrice,
                 bet.contractAmount
             );
@@ -517,9 +510,7 @@ contract Bets is ReentrancyGuard {
             (uint256(bet.betPrice).mul(10**17).mul(bet.contractAmount)), 
             (uint256(ONE_TOKEN.sub(uint256(bet.betPrice).mul(10**17))).mul(bet.contractAmount)));
         }
-
         delete bets[_betIndex];
-
     }
     
     /**
@@ -544,20 +535,5 @@ contract Bets is ReentrancyGuard {
         uint128 _contractAmount
         ) external nonReentrant {
         _createBetB(_betPrice, _contractAmount);
-    }
-
-    /**
-     * @notice retrieves the game result
-     * @param _requestId the requestId returned by requestGame function
-     * @param _idx match Id returned by requestGame function
-     * return GameResolve struct
-     *  struct GameResolve {
-        bytes32 gameId;
-        uint8 homeScore;
-        uint8 awayScore;
-        uint8 statusId;
-        }
-     */
-    
-
+    } 
 }
