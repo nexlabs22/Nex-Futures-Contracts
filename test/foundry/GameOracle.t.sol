@@ -36,7 +36,7 @@ contract BetsContract is Test {
     }
 
     function uintToBytes32(uint myUint) public pure returns (bytes32 myBytes32) {
-    myBytes32 = bytes32(myUint);
+        myBytes32 = bytes32(myUint);
     }
 
 }

@@ -510,9 +510,7 @@ contract Bets is ReentrancyGuard {
             (uint256(bet.betPrice).mul(10**17).mul(bet.contractAmount)), 
             (uint256(ONE_TOKEN.sub(uint256(bet.betPrice).mul(10**17))).mul(bet.contractAmount)));
         }
-
         delete bets[_betIndex];
-
     }
     
     /**
@@ -537,20 +535,5 @@ contract Bets is ReentrancyGuard {
         uint128 _contractAmount
         ) external nonReentrant {
         _createBetB(_betPrice, _contractAmount);
-    }
-
-    /**
-     * @notice retrieves the game result
-     * @param _requestId the requestId returned by requestGame function
-     * @param _idx match Id returned by requestGame function
-     * return GameResolve struct
-     *  struct GameResolve {
-        bytes32 gameId;
-        uint8 homeScore;
-        uint8 awayScore;
-        uint8 statusId;
-        }
-     */
-    
-
+    } 
 }

@@ -1,4 +1,5 @@
 node_modules
+out
 .env
 coverage
 coverage.json
@@ -14,6 +15,5 @@ package.json
 
 .DS_Store
 
-out
 
 forge-cache

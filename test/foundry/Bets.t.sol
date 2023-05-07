@@ -23,6 +23,7 @@ contract BetsContract is Test {
     address addr4 = vm.addr(4);
     address addr5 = vm.addr(5);
     address admin = vm.addr(6);
+    address owner = vm.addr(7);
 
     uint128 constant POINT_EIGHT = 8;
     uint128 constant POINT_SIX = 6;
@@ -62,6 +63,23 @@ contract BetsContract is Test {
         uint256 contractAmount
     );
 
+    event BetTaken(
+        address indexed accountA,
+        address indexed accountB,
+        uint256 indexed betIndex,
+        uint256 betPriceA,
+        uint256 betPriceB,
+        uint256 contractAmount
+    );
+
+    event BetExecuted(
+        address indexed winner,
+        address indexed loser,
+        uint256 betPriceWinner,
+        uint256 betPriceLoser,
+        uint256 contractAmount
+    );
+
     function setUp() public {
 
         usdc = new Token(10000000e18);
@@ -72,29 +90,50 @@ contract BetsContract is Test {
         usdc.transfer(addr5, 1000e18);
         usdc.transfer(admin, 1000e18);
 
-        link = new LinkToken();
-        oracle = new MockGameOracle(address(link));
-        game = new GameOracle(address(link), address(oracle));
-        bets = new Bets(
-            address(game),
-            address(usdc),
-            address(admin)
-        );
+        vm.startPrank(owner);
+            link = new LinkToken();
+            oracle = new MockGameOracle(address(link));
+            game = new GameOracle(address(link), address(oracle));
+            bets = new Bets(
+                address(game),
+                address(usdc),
+                address(admin)
+            );
+        vm.stopPrank();
 
         vm.startPrank(addr1);
-        usdc.approve(address(bets), 10000e18);
+            usdc.approve(address(bets), 10000e18);
         vm.stopPrank();
 
         vm.startPrank(addr2);
-        usdc.approve(address(bets), 10000e18);
+            usdc.approve(address(bets), 10000e18);
+        vm.stopPrank();
+
+        vm.startPrank(addr3);
+            usdc.approve(address(bets), 10000e18);
         vm.stopPrank();
 
         vm.startPrank(addr5);
-        usdc.approve(address(bets), 10000e18);
+            usdc.approve(address(bets), 10000e18);
         vm.stopPrank();
     }
 
-    function testBetCounter() public {
+    function uintToBytes32(uint myUint) public pure returns (bytes32) {
+            return bytes32(myUint);
+    }
+
+    function setGameOracleStatuses(string memory matchStatus, uint8 homeScore, uint8 awayScore) public {
+        vm.startPrank(owner);
+            //request data
+            bytes32 scoreRequestId = game.requestGameScore("");
+            bytes32 statusRequestId = game.requestGameStatus("");
+            //set oracle data
+            oracle.fulfillOracleScoreRequest(scoreRequestId, uintToBytes32(homeScore), uintToBytes32(awayScore));
+            oracle.fulfillOracleStatusRequest(statusRequestId, matchStatus);
+        vm.stopPrank();
+    }
+
+    function test_BetCounter() public {
         vm.startPrank(addr1);
         uint256 betIndex_1 = bets.betCounter();
         assertEq(betIndex_1, 0);
@@ -107,7 +146,7 @@ contract BetsContract is Test {
         vm.stopPrank();
     }
 
-    function testCreateBetA() public {
+    function test_CreateBetA() public {
         vm.startPrank(addr5);
         bets.createBetA(POINT_EIGHT, 100);
         uint256 betIndex = bets.betCounter();
@@ -119,7 +158,7 @@ contract BetsContract is Test {
         vm.stopPrank();
     }
 
-    function testCreateBetAEvent() public {
+    function test_CreateBetAEvent() public {
         vm.startPrank(addr1);
         vm.expectEmit(true, true, true, true);
 
@@ -175,7 +214,7 @@ contract BetsContract is Test {
         vm.stopPrank();
     }
 
-    function testCreateBetB() public {
+    function test_CreateBetB() public {
         vm.startPrank(addr2);
         bets.createBetB(POINT_FOUR, 100);
         uint256 betIndex = bets.betCounter();
@@ -187,7 +226,7 @@ contract BetsContract is Test {
         vm.stopPrank();
     }
 
-    function testCreateBetBEvent() public {
+    function test_CreateBetBEvent() public {
         vm.startPrank(addr2);
         vm.expectEmit(true, true, true, true);
 
@@ -207,25 +246,114 @@ contract BetsContract is Test {
         vm.stopPrank();
     }
 
-    
-    // function testCancelBetAEvent() public {
-    //     vm.startPrank(addr2);
-    //     bets.createBetA(POINT_SIX, 100);
-    //     vm.stopPrank(); 
+    function test_CancelBetAEvent() public {
+        vm.startPrank(addr2);
+        bets.createBetA(POINT_SIX, 100);
+        vm.expectEmit(true, true, true, true);
+        uint256 betIndex = bets.betCounter();
 
-    //     vm.startPrank(addr2);
-    //     vm.expectEmit(true, true, true, true);
-    //     uint256 betIndex = bets.betCounter();
+        emit BetCanceled(
+            addr2,
+            betIndex,
+            POINT_SIX,
+            100
+        );
 
-    //     emit BetCanceled(
-    //         addr2,
-    //         betIndex,
-    //         POINT_SIX,
-    //         100
-    //     );
+        bets.cancelBetA(betIndex);
+        vm.stopPrank();
+    }
 
-    //     bets.cancelBetA("", 0, betIndex);
-    //     vm.stopPrank();
-    // }
+    function test_CancelBetBEvent() public {
+        vm.startPrank(addr2);
+        bets.createBetB(POINT_FOUR, 100);
+        vm.expectEmit(true, true, true, true);
+        uint256 betIndex = bets.betCounter();
+
+        emit BetCanceled(
+            addr2,
+            betIndex,
+            POINT_FOUR,
+            100
+        );
+
+        bets.cancelBetB(betIndex);
+        vm.stopPrank();
+    }
+
+    function test_TakeBetA() public {
+        vm.startPrank(addr2);
+            bets.createBetB(POINT_FOUR, 100);
+        vm.stopPrank();
+
+        uint256 betIndex = bets.betCounter();
+
+        vm.startPrank(addr3);
+            vm.expectEmit(true, true, true, true);
+
+            emit BetTaken(
+                addr3,
+                addr2,
+                betIndex,
+                POINT_SIX,
+                POINT_FOUR,
+                100
+            );
+
+            bets.takeBet(betIndex);
+        vm.stopPrank();
+    }
+
+    function test_TakeBetB() public {
+        vm.startPrank(addr3);
+            bets.createBetA(POINT_EIGHT, 100);
+        vm.stopPrank();
+
+        uint256 betIndex = bets.betCounter();
+
+        vm.startPrank(addr2);
+            vm.expectEmit(true, true, true, true);
+
+            emit BetTaken(
+                addr3,
+                addr2,
+                betIndex,
+                POINT_EIGHT,
+                POINT_TWO,
+                100
+            );
+
+            bets.takeBet(betIndex);
+        vm.stopPrank();
+    }
+
+    function test_ExecuteBet() public {
+        vm.startPrank(addr3);
+            bets.createBetA(POINT_EIGHT, 100);
+        vm.stopPrank();
+
+        uint256 betIndex = bets.betCounter();
+
+        vm.startPrank(addr2);
+            bets.takeBet(betIndex);
+        vm.stopPrank();
+
+        setGameOracleStatuses("FT", 1, 2);
+        
+        vm.startPrank(addr2);
+
+            vm.expectEmit(true, true, true, true);
+
+            emit BetExecuted(
+                addr2,
+                addr3,
+                POINT_TWO,
+                POINT_EIGHT,
+                100
+            );
+
+            bets.executeBet(betIndex);
+        vm.stopPrank();
+
+    }
 
 }
