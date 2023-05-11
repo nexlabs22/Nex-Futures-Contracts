@@ -11,6 +11,9 @@
  // spolia link address = 0x779877A7B0D9E8603169DdbD7836e478b4624789
  // spolia oracle address = 0x6c2e87340Ef6F3b7e21B2304D6C057091814f25E
 
+ // goerli link address = 0x326C977E6efc84E512bB9C30f76E30c160eD06FB
+ // goerli oracle address = 0x6c2e87340Ef6F3b7e21B2304D6C057091814f25E
+
 
 /**
 SHORT	LONG	                                    TYPE	
