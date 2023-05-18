@@ -3,35 +3,58 @@ pragma solidity ^0.8.17;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {GameOracle} from "./GameOracle.sol";
 import {Counters} from "@openzeppelin/contracts/utils/Counters.sol";
 
 contract Bets is ReentrancyGuard {
-    using SafeMath for uint256;
     using SafeERC20 for IERC20;
     using Counters for Counters.Counter;
 
-    GameOracle public game;
+    error BetAlreadyFilled();
+    error FeeOutOfRange();
+    error GameStarted();
+    error GameNotFinished();
+    error NotWinner();
+    error NonExistentOrder();
+    error NotYourOrder();
+    error Unauthorized();
+    error UnfilledBet();
+
+    GameOracle public oracle;
 
     address public usdc;
     address public owner;
     address public admin;
 
+    string public country;
+    string public league;
+    string public season;
+
     uint16 public constant ONE = 10;
     uint16 public executionFee = 10; //=> 10/10000 = 0.1%
     
     Counters.Counter public betCounter;
+    Counters.Counter public gameCounter;
     uint256 constant ONE_TOKEN = 10**18;
 
     mapping(uint256 => Bet) public bets;
+    mapping(uint256 => Game) public games;
 
     struct Bet {
         address accountA; 
         address accountB; 
         uint128 betPrice;
         uint128 contractAmount;
+    }
+
+    struct Game {
+        uint256 gameId;
+        uint16 homeTeam;
+        uint16 awayTeam;
+        uint256 homeScore;
+        uint256 awayScore;
+        string status;
     }
 
     event FeeTransferred(
@@ -98,24 +121,68 @@ contract Bets is ReentrancyGuard {
     );
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "Forbidden, not owner");
+        if(msg.sender != owner) revert Unauthorized(); 
         _;
     }
     
     modifier onlyAdmin() {
-        require(msg.sender == admin, "Forbidden, not admin");
+        if(msg.sender != admin) revert Unauthorized();
         _;
     }
 
     constructor(
+        string memory _country,
+        string memory _league,
         address _gameOracleAddress,
         address _usdc,
         address _admin
     ) {
-        game = GameOracle(_gameOracleAddress);
+        oracle = GameOracle(_gameOracleAddress);
         usdc = _usdc;
         admin = _admin;
         owner = msg.sender;
+        country = _country;
+        league = _league;
+    }
+
+    /**
+     * @notice retrieves and fulfills information about the game of interest
+     * @param _gameId the Id of the game of interest
+     */
+    function updateOracle(string memory _gameId) public onlyOwner {
+        bytes32 scoreRequestId = oracle.requestGameScore(_gameId);
+        bytes32 statusRequestId = oracle.requestGameStatus(_gameId);
+        oracle.fulfillScores(scoreRequestId, oracle.homeScore(), oracle.awayScore());
+        oracle.fulfillGameStatus(statusRequestId, oracle.gameStatus());
+    }
+
+    /**
+     * @notice sets the current game, can only be called by the owner
+     * @param _homeTeam team currently playing home
+     * @param _awayTeam team currently playing away
+     */
+    function setGame(uint16 _homeTeam, uint16 _awayTeam) public onlyOwner {
+
+        gameCounter.increment();
+        uint256 _gameIndex = gameCounter.current();
+
+        Game memory game = Game(
+            _gameIndex,
+            _homeTeam,
+            _awayTeam,
+            oracle.homeScore(),
+            oracle.awayScore(),
+            oracle.gameStatus()
+        );
+        games[_gameIndex] = game;
+    }
+
+    /**
+     * @notice updates the current season
+     * @param _newSeason new season as a string
+     */
+    function updateSeason(string memory _newSeason) public onlyAdmin {
+        season = _newSeason;
     }
 
     /**
@@ -123,23 +190,22 @@ contract Bets is ReentrancyGuard {
      * @param _gameOracleAddress the new game oracle address.
      */
      function setGameOracle(address _gameOracleAddress) public onlyAdmin {
-        game = GameOracle(_gameOracleAddress);
+        oracle = GameOracle(_gameOracleAddress);
      }
 
     /**
      * @notice check that match is started or not
      */
-     function isMatchStarted() public view returns(bool){
+     function isMatchStarted() public view returns(bool) {
         if(
-            game.compare("TBD") ||  //Time To Be Defined
-            game.compare("NS") ||   //Not Started	  
-            game.compare("PST") ||  //Match Postponed
-            game.compare("CANC") || //Match Cancelled	
-            game.compare("ABD") ||  //Match Abandoned	
-            game.compare("AWD") ||  //Technical Loss
-            game.compare("WO") ||   //WalkOver
-            game.compare("")        // no data
-
+            oracle.compare("TBD") ||  //Time To Be Defined
+            oracle.compare("NS") ||   //Not Started	  
+            oracle.compare("PST") ||  //Match Postponed
+            oracle.compare("CANC") || //Match Cancelled	
+            oracle.compare("ABD") ||  //Match Abandoned	
+            oracle.compare("AWD") ||  //Technical Loss
+            oracle.compare("WO") ||   //WalkOver
+            oracle.compare("")        // no data
         ){
             return false;
         } else {
@@ -148,20 +214,20 @@ contract Bets is ReentrancyGuard {
      }
 
 
-     /**
-     * @notice check that match is finished or not
-     */
-     function isMatchFinished() public view returns(bool){
+    /**
+    * @notice check that match is finished or not
+    */
+    function isMatchFinished() public view returns(bool) {
         if(
-            game.compare("FT") ||  //Match Finished	
-            game.compare("AET") ||   //Match Finished After Extra Time	  
-            game.compare("PEN")  //Match Finished After Penalty
+            oracle.compare("FT") ||  //Match Finished	
+            oracle.compare("AET") ||   //Match Finished After Extra Time	  
+            oracle.compare("PEN")  //Match Finished After Penalty
         ){
             return true;
         } else {
             return false;
         }
-     }
+    }
 
     /**
      * @notice deposits the stake determined by the user.
@@ -195,7 +261,7 @@ contract Bets is ReentrancyGuard {
      * @param _betIndex the index of the taken bet
      */
     function takeBet(uint256 _betIndex) external nonReentrant {
-
+        if (isMatchStarted()) revert GameStarted();
         Bet memory bet = bets[_betIndex];
 
         if(bet.accountB == address(0)) {
@@ -210,7 +276,7 @@ contract Bets is ReentrancyGuard {
             bets[_betIndex] = filledBet;
 
             uint256 betPriceB = ONE - bet.betPrice;
-            uint256 complimentaryStake = betPriceB.mul(bet.contractAmount).mul(10**17);
+            uint256 complimentaryStake = betPriceB*bet.contractAmount*(10**17);
             depositStake(complimentaryStake);
 
             emit BetTaken(
@@ -233,7 +299,7 @@ contract Bets is ReentrancyGuard {
             bets[_betIndex] = filledBet;
 
             uint256 betPriceB = ONE - bet.betPrice;
-            uint256 complimentaryStake = betPriceB.mul(bet.contractAmount).mul(10**17);
+            uint256 complimentaryStake = betPriceB*bet.contractAmount*(10**17);
 
             depositStake(complimentaryStake);
 
@@ -246,7 +312,7 @@ contract Bets is ReentrancyGuard {
                 bet.contractAmount
             );
         } else {
-            revert("Bet has already been filled");
+            revert BetAlreadyFilled();
         }
     }
 
@@ -340,7 +406,7 @@ contract Bets is ReentrancyGuard {
 
         bets[_betIndex] = bet;
 
-        uint256 _stakedAmount = bet.betPrice * bet.contractAmount * 10**17;
+        uint256 _stakedAmount = _betPrice * bet.contractAmount * 10**17;
 
         depositStake(_stakedAmount);
 
@@ -367,7 +433,7 @@ contract Bets is ReentrancyGuard {
      * @param _newFee the new fee that needs to be paid per order execution
      */
     function setExecutionFee(uint16 _newFee) external onlyAdmin {
-        require(_newFee <= 100 && _newFee >= 1, "New fee out of range");
+        if (_newFee > 100 || _newFee < 1) revert FeeOutOfRange();
         executionFee = _newFee;
     }
 
@@ -379,15 +445,12 @@ contract Bets is ReentrancyGuard {
     function cancelBetA(
         uint256 _betIndex
     ) external nonReentrant {
-        require(
-            msg.sender != address(0)
-            || _betIndex != 0, 
-            "Order does not exist");
-
+        if (msg.sender == address(0) 
+            || _betIndex == 0) revert NonExistentOrder();
 
         Bet memory bet = bets[_betIndex];
 
-        require(msg.sender == bet.accountA, "Not your order");
+        if(msg.sender != bet.accountA) revert NotYourOrder(); 
 
         uint256 _stakedAmount = bet.betPrice * bet.contractAmount;
 
@@ -406,7 +469,7 @@ contract Bets is ReentrancyGuard {
                 transferStake(msg.sender, _stakedAmount);
             }
         } else {
-            revert("Game started, cannot cancel order");
+            revert GameStarted();
         }
 
         emit BetCanceled(
@@ -424,15 +487,12 @@ contract Bets is ReentrancyGuard {
     function cancelBetB(
         uint256 _betIndex
     ) external nonReentrant {
-        require(
-            msg.sender != address(0)
-            || _betIndex != 0, 
-            "Order does not exist");
-
+        if (msg.sender == address(0) 
+            || _betIndex == 0) revert NonExistentOrder();
 
         Bet memory bet = bets[_betIndex];
 
-        require(msg.sender == bet.accountB, "Not your order");
+        if(msg.sender != bet.accountB) revert NotYourOrder();
 
         uint256 _stakedAmount = bet.betPrice * bet.contractAmount;
 
@@ -450,7 +510,7 @@ contract Bets is ReentrancyGuard {
                 transferStake(msg.sender, _stakedAmount);
             }
         } else {
-            revert("Game started, cannot cancel order");
+            revert GameStarted();
         }
 
         emit BetCanceled(
@@ -468,20 +528,22 @@ contract Bets is ReentrancyGuard {
     function executeBet(  
         uint256 _betIndex
         ) external nonReentrant {
+        if (!isMatchFinished()) revert GameNotFinished();
 
-        require(_betIndex != 0, "Order does not exist");
+        if (_betIndex == 0) revert NonExistentOrder();
         
-        uint homeScore = game.homeScore();
-        uint awayScore = game.awayScore();
+        Game memory game = games[gameCounter.current()];
+        uint256 homeScore = game.homeScore;
+        uint256 awayScore = game.awayScore;
 
         Bet memory bet = bets[_betIndex];
 
-        require(bet.accountA != address(0) && bet.accountB != address(0), "Bet has not been filled");
+        if(bet.accountA == address(0) || bet.accountB == address(0)) revert UnfilledBet();
 
         uint256 _totalStake = bet.contractAmount * ONE_TOKEN;
 
         if (homeScore > awayScore) {
-            require(msg.sender == bet.accountA, "You are not the winner");
+            if(msg.sender != bet.accountA) revert NotWinner();
             uint256 _feeAdjustedStake = _totalStake - sendFeeToOwner(_totalStake);
             transferStake(bet.accountA, _feeAdjustedStake);
 
@@ -493,7 +555,7 @@ contract Bets is ReentrancyGuard {
                 bet.contractAmount
             );
         } else if (awayScore > homeScore) {
-            require(msg.sender == bet.accountB, "You are not the winner");
+            if(msg.sender != bet.accountB) revert NotWinner();
             uint256 _feeAdjustedStake = _totalStake - sendFeeToOwner(_totalStake);
             transferStake(bet.accountB, _feeAdjustedStake);
 
@@ -507,8 +569,8 @@ contract Bets is ReentrancyGuard {
 
         } else {
             returnFunds(bet.accountA, bet.accountB, 
-            (uint256(bet.betPrice).mul(10**17).mul(bet.contractAmount)), 
-            (uint256(ONE_TOKEN.sub(uint256(bet.betPrice).mul(10**17))).mul(bet.contractAmount)));
+            (uint256(bet.betPrice)*(10**17)*(bet.contractAmount)), 
+            (uint256(ONE_TOKEN-(uint256(bet.betPrice)*(10**17)))*(bet.contractAmount)));
         }
         delete bets[_betIndex];
     }
@@ -522,6 +584,7 @@ contract Bets is ReentrancyGuard {
         uint128 _betPrice, 
         uint128 _contractAmount
         ) external nonReentrant {
+        if (isMatchStarted()) revert GameStarted();
         _createBetA(_betPrice, _contractAmount);
     }
 
@@ -534,6 +597,7 @@ contract Bets is ReentrancyGuard {
         uint128 _betPrice, 
         uint128 _contractAmount
         ) external nonReentrant {
+        if (isMatchStarted()) revert GameStarted();
         _createBetB(_betPrice, _contractAmount);
     } 
 }

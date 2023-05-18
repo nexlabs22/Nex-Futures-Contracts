@@ -7,15 +7,20 @@ import "../../contracts/GameOracle.sol";
 import "../../contracts/Token.sol";
 import "../../contracts/test/LinkToken.sol";
 import "../../contracts/test/MockGameOracle.sol";
+import {Counters} from "@openzeppelin/contracts/utils/Counters.sol";
 
 
 contract BetsContract is Test {
+    using Counters for Counters.Counter;
 
     Bets public bets;
     LinkToken public link;
     Token public usdc;
-    MockGameOracle public oracle;
-    GameOracle public game;
+    MockGameOracle public mockOracle;
+    GameOracle public gameOracle;
+
+    Counters.Counter public gameCounter;
+    //mapping(uint256 => Game) public games;
 
     address addr1 = vm.addr(1);
     address addr2 = vm.addr(2);
@@ -36,6 +41,17 @@ contract BetsContract is Test {
         address accountB; 
         uint128 betPrice;
         uint128 contractAmount;
+    }
+
+    struct Game {
+        uint16 homeTeam;
+        uint16 awayTeam;
+        uint256 matchId;
+        uint256 homeScore;
+        uint256 awayScore;
+        string status;
+        bool isMatchStarted;
+        bool isMatchFinished;
     }
 
     event BetACreated(
@@ -92,10 +108,12 @@ contract BetsContract is Test {
 
         vm.startPrank(owner);
             link = new LinkToken();
-            oracle = new MockGameOracle(address(link));
-            game = new GameOracle(address(link), address(oracle));
+            mockOracle = new MockGameOracle(address(link));
+            gameOracle = new GameOracle(address(link), address(mockOracle));
             bets = new Bets(
-                address(game),
+                "England",
+                "Premier League",
+                address(gameOracle),
                 address(usdc),
                 address(admin)
             );
@@ -121,15 +139,26 @@ contract BetsContract is Test {
     function uintToBytes32(uint myUint) public pure returns (bytes32) {
             return bytes32(myUint);
     }
-
-    function setGameOracleStatuses(string memory matchStatus, uint8 homeScore, uint8 awayScore) public {
+    
+    function updateOracle(string memory _gameId, string memory status, uint homeScore, uint awayScore) public {
+        bytes32 scoreRequestId = gameOracle.requestGameScore(_gameId);
+        bytes32 statusRequestId = gameOracle.requestGameStatus(_gameId);
+        mockOracle.fulfillOracleScoreRequest(scoreRequestId, uintToBytes32(homeScore), uintToBytes32(awayScore));
+        mockOracle.fulfillOracleStatusRequest(statusRequestId, status);
+    }
+    
+    function test_UpdateGameStruct() public {
         vm.startPrank(owner);
-            //request data
-            bytes32 scoreRequestId = game.requestGameScore("");
-            bytes32 statusRequestId = game.requestGameStatus("");
-            //set oracle data
-            oracle.fulfillOracleScoreRequest(scoreRequestId, uintToBytes32(homeScore), uintToBytes32(awayScore));
-            oracle.fulfillOracleStatusRequest(statusRequestId, matchStatus);
+            updateOracle("1", "FT", 1, 2);
+            bets.setGame(34, 38);
+            uint256 gameIndex = bets.gameCounter();
+            (uint256 gameId, uint16 homeTeam, uint16 awayTeam, uint256 homeScore, uint256 awayScore, string memory status) = bets.games(gameIndex);
+            assertEq(homeTeam, 34);
+            assertEq(awayTeam, 38);
+            assertEq(gameId, gameIndex);
+            assertEq(homeScore, 1);
+            assertEq(awayScore, 2);
+            assertEq(status, "FT");
         vm.stopPrank();
     }
 
@@ -155,6 +184,66 @@ contract BetsContract is Test {
         assertEq(accountB, address(0));
         assertEq(betPrice, POINT_EIGHT);
         assertEq(contractAmount, 100);
+        vm.stopPrank();
+    }
+
+    function test_CreateBetATransfer() public {
+        vm.startPrank(addr2);
+        bets.createBetA(POINT_SIX, 100);
+        assertEq(usdc.balanceOf(address(bets)), 60*10**18);
+        vm.stopPrank();
+    }
+
+    function test_RevertCreateBetAandBIfGameStarted() public {
+        vm.startPrank(owner);
+            updateOracle("1", "HT", 0, 0);
+            bets.setGame(34, 38);
+        vm.stopPrank();
+        vm.startPrank(addr2);
+            bytes4 selector = bytes4(keccak256("GameStarted()"));
+            vm.expectRevert(selector);
+            bets.createBetA(POINT_EIGHT, 100);
+            vm.expectRevert(selector);
+            bets.createBetB(POINT_EIGHT, 100);
+        vm.stopPrank();
+    }
+
+    function test_RevertTakeBetIfGameStarted() public {
+        vm.startPrank(owner);
+            updateOracle("1", "TBD", 0, 0);
+            bets.setGame(34, 38);
+        vm.stopPrank();
+        vm.startPrank(addr3);
+            bets.createBetB(POINT_EIGHT, 100);
+        vm.stopPrank();
+        uint256 betIndex = bets.betCounter();
+        vm.startPrank(owner);
+            updateOracle("1", "HT", 0, 0);
+            bets.setGame(34, 38);
+        vm.stopPrank();
+        vm.startPrank(addr2);
+            bytes4 selector = bytes4(keccak256("GameStarted()"));
+            vm.expectRevert(selector);
+            bets.takeBet(betIndex);
+        vm.stopPrank();
+    }
+
+    function test_RevertTakeBetIfAlreadyFilled() public {
+        vm.startPrank(owner);
+            updateOracle("1", "TBD", 0, 0);
+            bets.setGame(34, 38);
+        vm.stopPrank();
+        vm.startPrank(addr3);
+            bets.createBetB(POINT_EIGHT, 100);
+        vm.stopPrank();
+        uint256 betIndex = bets.betCounter();
+        vm.startPrank(addr3);
+            bets.takeBet(betIndex);
+        vm.stopPrank();
+        vm.startPrank(addr5);
+            bytes4 selector = bytes4(keccak256("BetAlreadyFilled()"));
+            vm.expectRevert(selector);
+            bets.takeBet(betIndex);
         vm.stopPrank();
     }
 
@@ -226,6 +315,13 @@ contract BetsContract is Test {
         vm.stopPrank();
     }
 
+    function test_CreateBetBTransfer() public {
+        vm.startPrank(addr2);
+        bets.createBetB(POINT_FOUR, 100);
+        assertEq(usdc.balanceOf(address(bets)), 40*10**18);
+        vm.stopPrank();
+    }
+
     function test_CreateBetBEvent() public {
         vm.startPrank(addr2);
         vm.expectEmit(true, true, true, true);
@@ -277,6 +373,61 @@ contract BetsContract is Test {
         );
 
         bets.cancelBetB(betIndex);
+        vm.stopPrank();
+    }
+
+    function test_RevertCancelBetAandBIfGameStarted() public {
+        vm.startPrank(addr2);
+            bets.createBetA(POINT_SIX, 100);
+        vm.stopPrank();
+
+        uint256 betIndex = bets.betCounter();
+
+        vm.startPrank(addr3);
+            bets.createBetB(POINT_FOUR, 100);
+        vm.stopPrank();
+
+        uint256 betIndex2 = bets.betCounter();
+
+        vm.startPrank(owner);
+            updateOracle("1", "HT", 0, 0);
+            bets.setGame(34, 38);
+        vm.stopPrank();
+
+        vm.startPrank(addr2);
+            bytes4 selector = bytes4(keccak256("GameStarted()"));
+            vm.expectRevert(selector);
+            bets.cancelBetA(betIndex);
+        vm.stopPrank();
+
+        vm.startPrank(addr3);
+            vm.expectRevert(selector);
+            bets.cancelBetB(betIndex2);
+        vm.stopPrank();
+    }
+
+    function test_RevertCancelBetAandBIfOrderDoesNotExist() public {
+        vm.startPrank(addr2);
+            bets.createBetA(POINT_SIX, 100);
+        vm.stopPrank();
+
+        uint256 betIndex = bets.betCounter();
+
+        vm.startPrank(addr3);
+            bets.createBetB(POINT_FOUR, 100);
+        vm.stopPrank();
+
+        uint256 betIndex2 = bets.betCounter();
+        
+        vm.startPrank(address(0));
+            bytes4 selector = bytes4(keccak256("NonExistentOrder()"));
+            vm.expectRevert(selector);
+            bets.cancelBetA(betIndex);
+        vm.stopPrank();
+
+        vm.startPrank(address(0));
+            vm.expectRevert(selector);
+            bets.cancelBetB(betIndex2);
         vm.stopPrank();
     }
 
@@ -337,7 +488,10 @@ contract BetsContract is Test {
             bets.takeBet(betIndex);
         vm.stopPrank();
 
-        setGameOracleStatuses("FT", 1, 2);
+        vm.startPrank(owner);
+            updateOracle("1", "FT", 1, 2);
+            bets.setGame(34, 38);
+        vm.stopPrank();
         
         vm.startPrank(addr2);
 
@@ -353,7 +507,133 @@ contract BetsContract is Test {
 
             bets.executeBet(betIndex);
         vm.stopPrank();
-
     }
 
+    function test_ExecuteBetTransfers() public {
+        vm.startPrank(addr3);
+            bets.createBetA(POINT_EIGHT, 100);
+        vm.stopPrank();
+
+        uint256 betIndex = bets.betCounter();
+
+        uint256 balanceBeforeWin = usdc.balanceOf(addr2);
+        vm.startPrank(addr2);
+            bets.takeBet(betIndex);
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+            updateOracle("1", "FT", 1, 2);
+            bets.setGame(34, 38);
+        vm.stopPrank();
+        
+        vm.startPrank(addr2);
+            bets.executeBet(betIndex);
+            uint256 wonStake = 80 * 10**18;
+            uint256 executionFee = 100 * 10**18 * 10/10000;
+            assertEq(usdc.balanceOf(addr2), (balanceBeforeWin + wonStake - executionFee));
+        vm.stopPrank();
+    }
+
+    function test_RevertExecuteBetIfOrderNotFilled() public {
+        vm.startPrank(addr3);
+            bets.createBetA(POINT_EIGHT, 100);
+        vm.stopPrank();
+
+        uint256 betIndex = bets.betCounter();
+
+        vm.startPrank(owner);
+            updateOracle("1", "FT", 1, 2);
+            bets.setGame(34, 38);
+        vm.stopPrank();
+        
+        vm.startPrank(addr2);
+            bytes4 selector = bytes4(keccak256("UnfilledBet()"));
+            vm.expectRevert(selector);
+            bets.executeBet(betIndex);
+        vm.stopPrank();
+    }
+
+    function test_RevertExecuteBetIfOrderDoesNotExist() public {
+        vm.startPrank(addr3);
+            bets.createBetA(POINT_EIGHT, 100);
+        vm.stopPrank();
+
+        uint256 betIndex = bets.betCounter();
+
+        vm.startPrank(addr2);
+            bets.takeBet(betIndex);
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+            updateOracle("1", "FT", 1, 2);
+            bets.setGame(34, 38);
+        vm.stopPrank();
+
+        vm.startPrank(addr2);
+            bytes4 selector = bytes4(keccak256("NonExistentOrder()"));
+            vm.expectRevert(selector);
+            bets.executeBet(0);
+        vm.stopPrank();
+    }
+
+    function test_RevertExecuteBetIfYouLost() public {
+        vm.startPrank(addr3);
+            bets.createBetA(POINT_EIGHT, 100);
+        vm.stopPrank();
+
+        uint256 betIndex = bets.betCounter();
+
+        vm.startPrank(addr2);
+            bets.takeBet(betIndex);
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+            updateOracle("1", "FT", 1, 2);
+            bets.setGame(34, 38);
+        vm.stopPrank();
+
+        vm.startPrank(addr3);
+            bytes4 selector = bytes4(keccak256("NotWinner()"));
+            vm.expectRevert(selector);
+            bets.executeBet(betIndex);
+        vm.stopPrank();
+    }
+
+    function test_RevertExecuteBetIfGameNotFinished() public {
+        vm.startPrank(addr3);
+            bets.createBetA(POINT_EIGHT, 100);
+        vm.stopPrank();
+
+        uint256 betIndex = bets.betCounter();
+
+        vm.startPrank(addr2);
+            bets.takeBet(betIndex);
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+            updateOracle("1", "HT", 1, 2);
+            bets.setGame(34, 38);
+        vm.stopPrank();
+
+        vm.startPrank(addr2);
+            bytes4 selector = bytes4(keccak256("GameNotFinished()"));
+            vm.expectRevert(selector);
+            bets.executeBet(betIndex);
+        vm.stopPrank();
+    }
+
+    function test_SetExecutionFee() public {
+        vm.startPrank(admin);
+            bets.setExecutionFee(50);
+            assertEq(bets.executionFee(), 50);
+        vm.stopPrank();
+    }
+
+    function test_RevertSetExecutionFee() public {
+        vm.startPrank(admin);
+            bytes4 selector = bytes4(keccak256("FeeOutOfRange()"));
+            vm.expectRevert(selector);
+            bets.setExecutionFee(5000);
+        vm.stopPrank();
+    }
 }
