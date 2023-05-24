@@ -20,7 +20,6 @@ contract BetsContract is Test {
     GameOracle public gameOracle;
 
     Counters.Counter public gameCounter;
-    //mapping(uint256 => Game) public games;
 
     address addr1 = vm.addr(1);
     address addr2 = vm.addr(2);
@@ -150,12 +149,11 @@ contract BetsContract is Test {
     function test_UpdateGameStruct() public {
         vm.startPrank(owner);
             updateOracle("1", "FT", 1, 2);
-            bets.setGame(34, 38);
-            uint256 gameIndex = bets.gameCounter();
-            (uint256 gameId, uint16 homeTeam, uint16 awayTeam, uint256 homeScore, uint256 awayScore, string memory status) = bets.games(gameIndex);
+            bets.setGame("1", 34, 38);
+            (string memory gameId, uint16 homeTeam, uint16 awayTeam, uint256 homeScore, uint256 awayScore, string memory status) = bets.game();
             assertEq(homeTeam, 34);
             assertEq(awayTeam, 38);
-            assertEq(gameId, gameIndex);
+            assertEq(gameId, "1");
             assertEq(homeScore, 1);
             assertEq(awayScore, 2);
             assertEq(status, "FT");
@@ -197,7 +195,7 @@ contract BetsContract is Test {
     function test_RevertCreateBetAandBIfGameStarted() public {
         vm.startPrank(owner);
             updateOracle("1", "HT", 0, 0);
-            bets.setGame(34, 38);
+            bets.setGame("1", 34, 38);
         vm.stopPrank();
         vm.startPrank(addr2);
             bytes4 selector = bytes4(keccak256("GameStarted()"));
@@ -211,7 +209,7 @@ contract BetsContract is Test {
     function test_RevertTakeBetIfGameStarted() public {
         vm.startPrank(owner);
             updateOracle("1", "TBD", 0, 0);
-            bets.setGame(34, 38);
+            bets.setGame("1", 34, 38);
         vm.stopPrank();
         vm.startPrank(addr3);
             bets.createBetB(POINT_EIGHT, 100);
@@ -219,7 +217,7 @@ contract BetsContract is Test {
         uint256 betIndex = bets.betCounter();
         vm.startPrank(owner);
             updateOracle("1", "HT", 0, 0);
-            bets.setGame(34, 38);
+            bets.setGame("1", 34, 38);
         vm.stopPrank();
         vm.startPrank(addr2);
             bytes4 selector = bytes4(keccak256("GameStarted()"));
@@ -231,7 +229,7 @@ contract BetsContract is Test {
     function test_RevertTakeBetIfAlreadyFilled() public {
         vm.startPrank(owner);
             updateOracle("1", "TBD", 0, 0);
-            bets.setGame(34, 38);
+            bets.setGame("1", 34, 38);
         vm.stopPrank();
         vm.startPrank(addr3);
             bets.createBetB(POINT_EIGHT, 100);
@@ -391,7 +389,7 @@ contract BetsContract is Test {
 
         vm.startPrank(owner);
             updateOracle("1", "HT", 0, 0);
-            bets.setGame(34, 38);
+            bets.setGame("1", 34, 38);
         vm.stopPrank();
 
         vm.startPrank(addr2);
@@ -490,7 +488,7 @@ contract BetsContract is Test {
 
         vm.startPrank(owner);
             updateOracle("1", "FT", 1, 2);
-            bets.setGame(34, 38);
+            bets.setGame("1", 34, 38);
         vm.stopPrank();
         
         vm.startPrank(addr2);
@@ -523,7 +521,7 @@ contract BetsContract is Test {
 
         vm.startPrank(owner);
             updateOracle("1", "FT", 1, 2);
-            bets.setGame(34, 38);
+            bets.setGame("1", 34, 38);
         vm.stopPrank();
         
         vm.startPrank(addr2);
@@ -543,7 +541,7 @@ contract BetsContract is Test {
 
         vm.startPrank(owner);
             updateOracle("1", "FT", 1, 2);
-            bets.setGame(34, 38);
+            bets.setGame("1", 34, 38);
         vm.stopPrank();
         
         vm.startPrank(addr2);
@@ -566,7 +564,7 @@ contract BetsContract is Test {
 
         vm.startPrank(owner);
             updateOracle("1", "FT", 1, 2);
-            bets.setGame(34, 38);
+            bets.setGame("1", 34, 38);
         vm.stopPrank();
 
         vm.startPrank(addr2);
@@ -589,7 +587,7 @@ contract BetsContract is Test {
 
         vm.startPrank(owner);
             updateOracle("1", "FT", 1, 2);
-            bets.setGame(34, 38);
+            bets.setGame("1", 34, 38);
         vm.stopPrank();
 
         vm.startPrank(addr3);
@@ -612,7 +610,7 @@ contract BetsContract is Test {
 
         vm.startPrank(owner);
             updateOracle("1", "HT", 1, 2);
-            bets.setGame(34, 38);
+            bets.setGame("1", 34, 38);
         vm.stopPrank();
 
         vm.startPrank(addr2);

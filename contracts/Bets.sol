@@ -22,6 +22,7 @@ contract Bets is ReentrancyGuard {
     error UnfilledBet();
 
     GameOracle public oracle;
+    Game public game;
 
     address public usdc;
     address public owner;
@@ -35,11 +36,9 @@ contract Bets is ReentrancyGuard {
     uint16 public executionFee = 10; //=> 10/10000 = 0.1%
     
     Counters.Counter public betCounter;
-    Counters.Counter public gameCounter;
     uint256 constant ONE_TOKEN = 10**18;
 
     mapping(uint256 => Bet) public bets;
-    mapping(uint256 => Game) public games;
 
     struct Bet {
         address accountA; 
@@ -49,7 +48,7 @@ contract Bets is ReentrancyGuard {
     }
 
     struct Game {
-        uint256 gameId;
+        string gameId;
         uint16 homeTeam;
         uint16 awayTeam;
         uint256 homeScore;
@@ -161,20 +160,13 @@ contract Bets is ReentrancyGuard {
      * @param _homeTeam team currently playing home
      * @param _awayTeam team currently playing away
      */
-    function setGame(uint16 _homeTeam, uint16 _awayTeam) public onlyOwner {
-
-        gameCounter.increment();
-        uint256 _gameIndex = gameCounter.current();
-
-        Game memory game = Game(
-            _gameIndex,
-            _homeTeam,
-            _awayTeam,
-            oracle.homeScore(),
-            oracle.awayScore(),
-            oracle.gameStatus()
-        );
-        games[_gameIndex] = game;
+    function setGame(string memory _gameId, uint16 _homeTeam, uint16 _awayTeam) public onlyOwner {
+        game.gameId = _gameId;
+        game.homeTeam = _homeTeam;
+        game.awayTeam = _awayTeam;
+        game.homeScore = oracle.homeScore();
+        game.awayScore = oracle.awayScore();
+        game.status = oracle.gameStatus();        
     }
 
     /**
@@ -531,18 +523,14 @@ contract Bets is ReentrancyGuard {
         if (!isMatchFinished()) revert GameNotFinished();
 
         if (_betIndex == 0) revert NonExistentOrder();
-        
-        Game memory game = games[gameCounter.current()];
-        uint256 homeScore = game.homeScore;
-        uint256 awayScore = game.awayScore;
-
+    
         Bet memory bet = bets[_betIndex];
 
         if(bet.accountA == address(0) || bet.accountB == address(0)) revert UnfilledBet();
 
         uint256 _totalStake = bet.contractAmount * ONE_TOKEN;
 
-        if (homeScore > awayScore) {
+        if (game.homeScore > game.awayScore) {
             if(msg.sender != bet.accountA) revert NotWinner();
             uint256 _feeAdjustedStake = _totalStake - sendFeeToOwner(_totalStake);
             transferStake(bet.accountA, _feeAdjustedStake);
@@ -554,7 +542,8 @@ contract Bets is ReentrancyGuard {
                 (ONE - bet.betPrice),
                 bet.contractAmount
             );
-        } else if (awayScore > homeScore) {
+
+        } else if (game.awayScore > game.homeScore) {
             if(msg.sender != bet.accountB) revert NotWinner();
             uint256 _feeAdjustedStake = _totalStake - sendFeeToOwner(_totalStake);
             transferStake(bet.accountB, _feeAdjustedStake);
